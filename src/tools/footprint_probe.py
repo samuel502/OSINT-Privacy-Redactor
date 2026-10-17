@@ -1,6 +1,7 @@
 import subprocess
 import json
 import shutil
+import os
 
 # ==============================================================================
 # CORE TOOL FUNCTION (Importable Module)
@@ -10,11 +11,18 @@ def run_footprint_probe(email: str) -> dict:
     Scans for accounts registered to an email address using holehe.
     Returns structured JSON output containing status and discovered platforms.
     """
-    import sys
+    # Locate holehe executable in system PATH or user Python Scripts directory
+    tool_bin = shutil.which("holehe")
+    if not tool_bin:
+        user_scripts = os.path.expanduser(r"~\AppData\Roaming\Python\Python314\Scripts\holehe.exe")
+        if os.path.exists(user_scripts):
+            tool_bin = user_scripts
+
+    if not tool_bin:
+        return {"status": "error", "message": "holehe binary not found in system PATH or user Scripts", "found_platforms": []}
 
     try:
-        # Run holehe directly as a python module to bypass PATH issues
-        cmd = [sys.executable, "-m", "holehe", email, "--only-used"]
+        cmd = [tool_bin, email, "--only-used"]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
 
         found = []
