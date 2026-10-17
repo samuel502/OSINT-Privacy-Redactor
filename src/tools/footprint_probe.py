@@ -10,13 +10,11 @@ def run_footprint_probe(email: str) -> dict:
     Scans for accounts registered to an email address using holehe.
     Returns structured JSON output containing status and discovered platforms.
     """
-    tool_bin = shutil.which("holehe")
-    if not tool_bin:
-        return {"status": "error", "message": "holehe binary not found in system PATH", "found_platforms": []}
+    import sys
 
     try:
-        # Run holehe via CLI with json/text output parsing
-        cmd = [tool_bin, email, "--only-used"]
+        # Run holehe directly as a python module to bypass PATH issues
+        cmd = [sys.executable, "-m", "holehe", email, "--only-used"]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
 
         found = []
