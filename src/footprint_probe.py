@@ -1,16 +1,21 @@
-!pip install -q holehe
-
 import subprocess
 import json
 import shutil
 
+# ==============================================================================
+# CORE TOOL FUNCTION (Importable Module)
+# ==============================================================================
 def run_footprint_probe(email: str) -> dict:
+    """
+    Scans for accounts registered to an email address using holehe.
+    Returns structured JSON output containing status and discovered platforms.
+    """
     tool_bin = shutil.which("holehe")
     if not tool_bin:
-        return {"status": "error", "message": "holehe not found", "found_platforms": []}
+        return {"status": "error", "message": "holehe binary not found in system PATH", "found_platforms": []}
 
     try:
-        # Run holehe via CLI with json/text output
+        # Run holehe via CLI with json/text output parsing
         cmd = [tool_bin, email, "--only-used"]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
 
@@ -34,8 +39,20 @@ def run_footprint_probe(email: str) -> dict:
     except Exception as e:
         return {"status": "error", "message": str(e), "found_platforms": []}
 
-# Test execution
-test_email = "test@example.com"
-print(f"Running Footprint Probe on {test_email}...")
-output = run_footprint_probe(test_email)
-print(json.dumps(output, indent=2))
+
+# ==============================================================================
+# LOCAL / CLI TEST EXECUTION BLOCK
+# This section only runs when executing this file directly (e.g. python footprint_probe.py email@example.com)
+# ==============================================================================
+if __name__ == "__main__":
+    import sys
+    
+    if len(sys.argv) < 2:
+        print("Error: Missing target email argument.")
+        print("Usage: python src/tools/footprint_probe.py <email>")
+        sys.exit(1)
+        
+    target_email = sys.argv[1]
+    print(f"[CLI RUN] Executing Footprint Probe for: {target_email}\n")
+    test_output = run_footprint_probe(target_email)
+    print(json.dumps(test_output, indent=2))
