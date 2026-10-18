@@ -1,7 +1,3 @@
-import urllib.request
-import urllib.error
-
-# Extensive public profile pattern mapping for direct clickable link resolution
 EXENSIVE_PROFILE_PATTERNS = {
     "github.com": "https://github.com/{}",
     "spotify.com": "https://open.spotify.com/user/{}",
@@ -21,10 +17,9 @@ EXENSIVE_PROFILE_PATTERNS = {
 
 def resolve_clickable_profiles(platforms: list, email: str) -> list:
     """
-    Extracts the local handle from the email and builds direct, 
-    clickable public profile URLs for discovered platforms.
+    Constructs direct URL strings for identified platforms using the local part of the email.
     """
-    handle = email.split("@")[0].lower()
+    handle = email.split("@")[0].lower() if "@" in email else email.lower()
     resolved_accounts = []
 
     for idx, platform in enumerate(platforms, 1):
@@ -36,7 +31,7 @@ def resolve_clickable_profiles(platforms: list, email: str) -> list:
             link_type = "Direct Profile Link"
         else:
             profile_url = f"https://{platform_clean}"
-            link_type = "Account Recovery / Domain Portal"
+            link_type = "Domain Portal"
 
         resolved_accounts.append({
             "id": idx,
@@ -48,6 +43,5 @@ def resolve_clickable_profiles(platforms: list, email: str) -> list:
     return resolved_accounts
 
 if __name__ == "__main__":
-    # Test block
-    test_platforms = ["github.com", "spotify.com", "unknownsite.com"]
-    print(resolve_clickable_profiles(test_platforms, "donaldtrump@gmail.com"))
+    test_platforms = ["github.com", "spotify.com", "example.com"]
+    print(resolve_clickable_profiles(test_platforms, "target@example.com"))
