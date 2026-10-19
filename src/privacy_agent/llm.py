@@ -114,7 +114,7 @@ class GroqBackend:
             client = Groq(api_key=key)
         self.client = client
         # Check console.groq.com/docs/models; model names rotate. Override with GROQ_MODEL.
-        self.model = model or os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+        self.model = model or os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
         self.tools = _openai_tools(declarations or DECLARATIONS)
         self.messages: list = []
 
