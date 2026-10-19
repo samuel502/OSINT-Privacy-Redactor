@@ -1,40 +1,47 @@
-# OSINT Privacy & Footprint Redactor Agent
+# Privacy Footprint Agent
 
-An agentic AI-powered privacy utility designed to scan digital footprints, analyze data protection rights (GDPR/CCPA), and automate privacy opt-out or account suppression workflows. Built for Google Colab, Gradio, and free-tier cloud LLM APIs.
+An agentic AI tool that audits **your own** email address: it finds which services have an account tied to it and which known breaches include it, then builds a prioritised plan to remove that exposure (opt-out steps plus ready-to-send GDPR/CCPA erasure drafts). It runs locally or in Google Colab with a Gradio interface and a free Groq or Gemini API key.
 
-## 🔍 Problem Statement
-Digital exposure is fragmented across hundreds of online platforms, data brokers, and web services. For everyday users, auditing where an email or identifier is registered and manually executing removal requests is tedious, time-consuming, and often blocked behind paywalls or clunky web forms. 
+## Why an agent
+The right next step depends on what the earlier tools found. A breached account with a known deletion route should come first; a service with no playbook needs a legal template instead; a probe that fails should be reported, not guessed. The model chooses the tools and the order, Python runs them, and the observations go back to the model until it can write the plan. The Gradio UI shows every step of that loop.
 
-## 💡 The Solution
-The **OSINT Privacy Redactor** provides a single, unified interface to:
-1. **Discover:** Probe exposed accounts and digital footprints using open-source intelligence tools.
-2. **Retrieve:** Query a local vector database containing site-specific removal policies, direct suppression links, and legal clauses (GDPR/CCPA).
-3. **Execute:** Dispatch automated removal requests, generate pre-filled legal suppression templates, or handle advanced flows via optional user-provided API keys (e.g., CAPTCHA handling or broker APIs).
+## Tools (four, three kinds of work)
+| Tool | Kind | What it does |
+|---|---|---|
+| `footprint_probe` | discovery | holehe + Gravatar: services with an account registered to the email. Confirmed hits only. |
+| `breach_lookup` | discovery (different source) | Free XposedOrNot API: known breaches containing the email. |
+| `search_playbooks` | retrieval | Exact-match then TF-IDF search over `data/playbooks.json` (opt-out URL, steps, verified flag, date). |
+| `draft_erasure_request` | action | GDPR / UK GDPR / CCPA erasure email draft. Draft only; nothing is sent. |
 
----
+Every tool returns the same shape (`status: ok | unavailable | error`). `unavailable` means "could not check", never "nothing found".
 
-## 🏗️ Technical Architecture
+## Design decisions
+- **The model never sees or chooses the email.** The agent injects it into tool calls, so the model cannot be steered into probing another address, and the address is not sent to the LLM. Tool results are.
+- **Own-email only.** The UI requires an attestation checkbox; the CLI requires `--i-own-this-email`.
+- **No fabricated results.** Nothing is padded, defaulted, or guessed. Unverified playbook entries are labelled.
+- **Human in the loop.** Erasure requests are drafts. You send them.
 
-```text
-[ User Input (Email / Identifier) ]
-                 │
-                 ▼
-       ┌───────────────────┐
-       │   Agent Tool 1    │ ──► Runs local OSINT footprint checks (e.g., holehe)
-       │ (Footprint Probe) │
-       └───────────────────┘
-                 │
-                 ▼
-       ┌───────────────────┐
-       │   Agent Tool 2    │ ──► Queries Vector DB for GDPR/CCPA removal policies
-       │  (Policy Search)  │
-       └───────────────────┘
-                 │
-                 ▼
-       ┌───────────────────┐
-       │   Agent Tool 3    │ ──► Generates custom opt-out templates / SMTP payloads
-       │(Action Dispatcher)│
-       └───────────────────┘
-                 │
-                 ▼
-       [ Gradio Dashboard Output ]
+## Run locally
+```bash
+pip install -r requirements.txt
+export GROQ_API_KEY=...              # console.groq.com/keys (default provider if set)
+# or: export GEMINI_API_KEY=...      # Google AI Studio key
+
+python -m pytest                                              # tests, no network or key needed
+python cli.py me@example.com --i-own-this-email --tools-only  # tools only, no LLM quota used
+python cli.py me@example.com --i-own-this-email               # full agent loop (--provider groq|gemini)
+python app.py                                                 # Gradio UI
+```
+
+## Run in Colab
+Open `notebooks/colab_quickstart.ipynb`, add `GROQ_API_KEY` (and/or `GEMINI_API_KEY`) to Colab Secrets, and run the cells.
+
+## Add playbooks (this is the part that makes it useful)
+Edit `src/privacy_agent/data/playbooks.json`. For each service, visit its opt-out or deletion page yourself, then record `opt_out_url`, `steps_summary`, whether email confirmation is needed, `verified: true`, and `last_verified`. The shipped entries are unverified seeds. Add `lookup_service` entries for the email-lookup sites you want people to opt out of.
+
+## Limitations
+- holehe depends on third-party sites and breaks or rate-limits often; results are a floor, not a complete list.
+- Free tiers are rate-limited. Groq's allows more requests per minute but has a small tokens-per-minute cap (observations are truncated for that reason); Gemini's free tier has small daily limits. Set `GROQ_MODEL` / `GEMINI_MODEL` if a default model is unavailable.
+- Smaller open models can emit malformed tool calls; the Groq backend retries these.
+- Opt-out links can go stale. That is why entries carry `last_verified`.
+- Not legal advice.

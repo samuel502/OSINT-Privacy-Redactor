@@ -1,0 +1,5 @@
+groq>=0.11
+google-genai>=1.0
+gradio>=4.0
+holehe
+pytest
