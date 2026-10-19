@@ -17,19 +17,19 @@ Every tool returns the same shape (`status: ok | unavailable | error`). `unavail
 
 ## Design decisions
 - **The model never sees or chooses the email.** The agent injects it into tool calls, so the model cannot be steered into probing another address, and the address is not sent to the LLM. Tool results are.
-- **Own-email only.** The UI requires an attestation checkbox; the CLI requires `--i-own-this-email`.
+- **Intended for your own address.** There is no ownership gate (anyone could just type a confirmation), so the UI and README state the intended use instead.
 - **No fabricated results.** Nothing is padded, defaulted, or guessed. Unverified playbook entries are labelled.
 - **Human in the loop.** Erasure requests are drafts. You send them.
 
 ## Run locally
 ```bash
 pip install -r requirements.txt
-export GROQ_API_KEY=...              # console.groq.com/keys (default provider if set)
+read -rsp "Groq API key: " GROQ_API_KEY; echo; export GROQ_API_KEY   # key stays hidden while you type (console.groq.com/keys)
 # or: export GEMINI_API_KEY=...      # Google AI Studio key
 
 python -m pytest                                              # tests, no network or key needed
-python cli.py me@example.com --i-own-this-email --tools-only  # tools only, no LLM quota used
-python cli.py me@example.com --i-own-this-email               # full agent loop (--provider groq|gemini)
+python cli.py me@example.com --tools-only                    # tools only, no LLM quota used
+python cli.py me@example.com                                 # full agent loop (--provider groq|gemini)
 python app.py                                                 # Gradio UI
 ```
 

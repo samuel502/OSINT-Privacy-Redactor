@@ -1,6 +1,6 @@
 """Local runner. Examples:
-  python cli.py me@example.com --i-own-this-email --tools-only     # no LLM, no API quota
-  python cli.py me@example.com --i-own-this-email --jurisdiction gdpr   # full agent (needs GROQ_API_KEY or GEMINI_API_KEY)
+  python cli.py me@example.com --tools-only                    # no LLM, no API quota
+  python cli.py me@example.com --jurisdiction gdpr             # full agent (needs GROQ_API_KEY or GEMINI_API_KEY)
 """
 import argparse
 import json
@@ -16,10 +16,8 @@ from privacy_agent.tools import dispatch  # noqa: E402
 
 
 def main():
-    p = argparse.ArgumentParser(description="Audit YOUR OWN email footprint and plan removal.")
+    p = argparse.ArgumentParser(description="Audit an email footprint (intended for your own address) and plan removal.")
     p.add_argument("email")
-    p.add_argument("--i-own-this-email", action="store_true", required=True,
-                   help="Confirm this is your own address.")
     p.add_argument("--jurisdiction", default="gdpr", choices=["gdpr", "uk_gdpr", "ccpa", "other"])
     p.add_argument("--provider", default=None, choices=["groq", "gemini"])
     p.add_argument("--model", default=None)

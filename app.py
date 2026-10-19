@@ -14,10 +14,7 @@ JURISDICTIONS = [("EU / EEA (GDPR)", "gdpr"), ("UK (UK GDPR)", "uk_gdpr"),
                  ("California (CCPA)", "ccpa"), ("Other", "other")]
 
 
-def audit(email, jurisdiction, attested, provider, api_key):
-    if not attested:
-        yield "Please confirm this is your own email address.", ""
-        return
+def audit(email, jurisdiction, provider, api_key):
     try:
         email = validate_email(email)
         backend = make_backend(provider, api_key=(api_key or "").strip() or None)
@@ -38,13 +35,12 @@ with gr.Blocks(title="Privacy Footprint Agent") as demo:
     with gr.Row():
         email = gr.Textbox(label="Your email address")
         jurisdiction = gr.Dropdown(JURISDICTIONS, value="gdpr", label="Your legal jurisdiction")
-    attested = gr.Checkbox(label="This is my own email address")
     provider = gr.Dropdown([("Groq", "groq"), ("Gemini", "gemini")], value="groq", label="LLM provider")
     api_key = gr.Textbox(label="API key (optional if GROQ_API_KEY / GEMINI_API_KEY is set)", type="password")
     run = gr.Button("Run audit", variant="primary")
     plan = gr.Markdown(label="Removal plan")
     trace = gr.Markdown(label="Agent trace")
-    run.click(audit, [email, jurisdiction, attested, provider, api_key], [trace, plan])
+    run.click(audit, [email, jurisdiction, provider, api_key], [trace, plan])
 
 if __name__ == "__main__":
     demo.launch(share=bool(os.environ.get("GRADIO_SHARE")))
