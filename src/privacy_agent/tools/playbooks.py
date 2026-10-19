@@ -17,6 +17,9 @@ from ..schema import result
 DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "playbooks.json"
 
 
+_STOP = {"the", "a", "an", "of", "to", "and", "for", "in", "on", "your", "my", "site", "s", "account"}
+
+
 def _tok(s: str):
     return re.findall(r"[a-z0-9]+", s.lower())
 
@@ -49,17 +52,19 @@ class PlaybookIndex:
 
     def search(self, query: str, k: int = 3, category: str | None = None):
         dom = _norm_domain(query)
-        exact = [e for e in self.entries if dom == e["domain"] or dom in e.get("aliases", [])]
+        looks_like_domain = " " not in query.strip() and "." in dom
+        root = ".".join(dom.split(".")[-2:]) if looks_like_domain else dom
+        exact = [e for e in self.entries
+                 if dom in (e["domain"], *e.get("aliases", [])) or root in (e["domain"], *e.get("aliases", []))]
         scored = [(1.0, e) for e in exact]
-        q = self._vec(Counter(_tok(query)))
-        for vec, e in zip(self.vecs, self.entries):
-            if e in exact:
-                continue
-            s = sum(w * vec.get(t, 0.0) for t, w in q.items())
-            if s > 0.05:
-                scored.append((s, e))
+        if not looks_like_domain:  # free-text query: fuzzy match; domain-like queries only match exactly
+            q = self._vec(Counter(t for t in _tok(query) if t not in _STOP))
+            for vec, e in zip(self.vecs, self.entries):
+                s_ = sum(w * vec.get(t, 0.0) for t, w in q.items())
+                if s_ > 0.15:
+                    scored.append((s_, e))
         if category:
-            scored = [(s, e) for s, e in scored if e.get("category") == category]
+            scored = [(s_, e) for s_, e in scored if e.get("category") == category]
         scored.sort(key=lambda x: -x[0])
         return scored[:k]
 
@@ -80,7 +85,7 @@ def search_playbooks(query: str, category: str | None = None) -> dict:
     hits = index.search(query, category=category)
     matches = [{**{k: e.get(k) for k in (
         "domain", "name", "category", "opt_out_url", "steps_summary",
-        "requires_email_confirmation", "verified", "last_verified", "notes")},
+        "requires_email_confirmation", "needs_captcha", "verified", "last_verified", "notes")},
         "score": round(s, 3)} for s, e in hits]
     note = None if matches else "No playbook on file for this query; use draft_erasure_request as the fallback."
     if any(not m["verified"] for m in matches):

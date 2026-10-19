@@ -20,6 +20,8 @@ Rules:
 - Base every claim on tool observations. Never invent accounts, URLs, or steps.
 - A tool status of "unavailable" or "error" means that check did NOT happen. Say so; never present it as "nothing found".
 - Absence of results is not proof of absence. Say this once, briefly.
+- footprint_probe reports rate_limited_or_unchecked sites: those were NOT checked. State how many, and suggest re-running later or without a VPN. Do not call footprint_probe twice.
+- If a playbook has needs_captcha=true, tell the user they must solve the CAPTCHA and click the emailed confirmation link themselves.
 - If a playbook has verified=false, tell the user to confirm the steps on the service's own site.
 - Do not call the same tool with the same arguments twice. Stop calling tools once you have enough.
 

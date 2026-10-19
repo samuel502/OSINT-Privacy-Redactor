@@ -1,37 +1,108 @@
 [
-  {"domain": "github.com", "name": "GitHub", "aliases": [], "category": "account_service",
-   "opt_out_url": "https://github.com/settings/admin",
-   "steps_summary": "Account settings, then the delete account option near the bottom of the page.",
-   "requires_email_confirmation": null, "verified": false, "last_verified": null,
-   "notes": "SEED ENTRY: confirm the URL and steps yourself, then set verified=true and last_verified."},
-  {"domain": "spotify.com", "name": "Spotify", "aliases": [], "category": "account_service",
-   "opt_out_url": "https://www.spotify.com/account/privacy/",
-   "steps_summary": "Account privacy settings; account closure is handled through Spotify support.",
-   "requires_email_confirmation": null, "verified": false, "last_verified": null,
-   "notes": "SEED ENTRY: confirm before relying on it."},
-  {"domain": "google.com", "name": "Google", "aliases": ["gmail.com", "youtube.com"], "category": "account_service",
-   "opt_out_url": "https://myaccount.google.com/delete-services-or-account",
-   "steps_summary": "Google Account, Data and privacy, then delete your Google Account.",
-   "requires_email_confirmation": null, "verified": false, "last_verified": null,
-   "notes": "SEED ENTRY: confirm before relying on it."},
-  {"domain": "x.com", "name": "X (Twitter)", "aliases": ["twitter.com"], "category": "account_service",
-   "opt_out_url": "https://x.com/settings/deactivate",
-   "steps_summary": "Settings, Your account, Deactivate your account; permanent deletion follows after a waiting period.",
-   "requires_email_confirmation": null, "verified": false, "last_verified": null,
-   "notes": "SEED ENTRY: confirm before relying on it."},
-  {"domain": "reddit.com", "name": "Reddit", "aliases": [], "category": "account_service",
-   "opt_out_url": "https://www.reddit.com/settings/account",
-   "steps_summary": "Settings, Account, deactivate account.",
-   "requires_email_confirmation": null, "verified": false, "last_verified": null,
-   "notes": "SEED ENTRY: confirm before relying on it."},
-  {"domain": "gravatar.com", "name": "Gravatar", "aliases": [], "category": "account_service",
-   "opt_out_url": null,
-   "steps_summary": "Sign in to Gravatar and look for profile or account deletion in settings.",
-   "requires_email_confirmation": null, "verified": false, "last_verified": null,
-   "notes": "SEED ENTRY: no URL on file. Find the current deletion page and record it."},
-  {"domain": "haveibeenpwned.com", "name": "Have I Been Pwned", "aliases": ["hibp"], "category": "lookup_service",
-   "opt_out_url": "https://haveibeenpwned.com/OptOut",
-   "steps_summary": "Enter your email on the opt-out page and confirm via the emailed link to be excluded from public search.",
-   "requires_email_confirmation": true, "verified": false, "last_verified": null,
-   "notes": "SEED ENTRY: confirm. ADD YOUR OWN lookup_service entries here (the email-OSINT-style sites you researched) with source_url and last_verified."}
+  {
+    "domain": "github.com",
+    "name": "GitHub",
+    "aliases": [],
+    "category": "account_service",
+    "opt_out_url": "https://github.com/settings/admin",
+    "steps_summary": "Account settings, then the delete account option near the bottom of the page.",
+    "requires_email_confirmation": null,
+    "verified": false,
+    "last_verified": null,
+    "notes": "SEED ENTRY: confirm the URL and steps yourself, then set verified=true and last_verified."
+  },
+  {
+    "domain": "spotify.com",
+    "name": "Spotify",
+    "aliases": [],
+    "category": "account_service",
+    "opt_out_url": "https://www.spotify.com/account/privacy/",
+    "steps_summary": "Account privacy settings; account closure is handled through Spotify support.",
+    "requires_email_confirmation": null,
+    "verified": false,
+    "last_verified": null,
+    "notes": "SEED ENTRY: confirm before relying on it."
+  },
+  {
+    "domain": "google.com",
+    "name": "Google",
+    "aliases": [
+      "gmail.com",
+      "youtube.com"
+    ],
+    "category": "account_service",
+    "opt_out_url": "https://myaccount.google.com/delete-services-or-account",
+    "steps_summary": "Google Account, Data and privacy, then delete your Google Account.",
+    "requires_email_confirmation": null,
+    "verified": false,
+    "last_verified": null,
+    "notes": "SEED ENTRY: confirm before relying on it."
+  },
+  {
+    "domain": "x.com",
+    "name": "X (Twitter)",
+    "aliases": [
+      "twitter.com"
+    ],
+    "category": "account_service",
+    "opt_out_url": "https://x.com/settings/deactivate",
+    "steps_summary": "Settings, Your account, Deactivate your account; permanent deletion follows after a waiting period.",
+    "requires_email_confirmation": null,
+    "verified": false,
+    "last_verified": null,
+    "notes": "SEED ENTRY: confirm before relying on it."
+  },
+  {
+    "domain": "reddit.com",
+    "name": "Reddit",
+    "aliases": [],
+    "category": "account_service",
+    "opt_out_url": "https://www.reddit.com/settings/account",
+    "steps_summary": "Settings, Account, deactivate account.",
+    "requires_email_confirmation": null,
+    "verified": false,
+    "last_verified": null,
+    "notes": "SEED ENTRY: confirm before relying on it."
+  },
+  {
+    "domain": "gravatar.com",
+    "name": "Gravatar",
+    "aliases": [],
+    "category": "account_service",
+    "opt_out_url": null,
+    "steps_summary": "Sign in to Gravatar and look for profile or account deletion in settings.",
+    "requires_email_confirmation": null,
+    "verified": false,
+    "last_verified": null,
+    "notes": "SEED ENTRY: no URL on file. Find the current deletion page and record it."
+  },
+  {
+    "domain": "haveibeenpwned.com",
+    "name": "Have I Been Pwned",
+    "aliases": [
+      "hibp"
+    ],
+    "category": "lookup_service",
+    "opt_out_url": "https://haveibeenpwned.com/OptOut",
+    "steps_summary": "Enter your email on the opt-out page and confirm via the emailed link to be excluded from public search.",
+    "requires_email_confirmation": true,
+    "verified": false,
+    "last_verified": null,
+    "notes": "SEED ENTRY: confirm. ADD YOUR OWN lookup_service entries here (the email-OSINT-style sites you researched) with source_url and last_verified."
+  },
+  {
+    "domain": "emailosint.org",
+    "name": "EmailOSINT",
+    "aliases": [
+      "emailosint"
+    ],
+    "category": "lookup_service",
+    "opt_out_url": "https://emailosint.org/claim",
+    "steps_summary": "Open the removal page, enter your email, solve the hCaptcha, click 'Send confirmation link', then click 'Confirm removal' in the email you receive. Per the site's confirmation email, this deletes stored search history for the address and blocks future lookups on their platform.",
+    "requires_email_confirmation": true,
+    "needs_captcha": true,
+    "verified": true,
+    "last_verified": "2026-09-12",
+    "notes": "Completed and tested by the project author: a later lookup of the address was blocked. Request email dated 12 Sept 2026. Re-check occasionally."
+  }
 ]
