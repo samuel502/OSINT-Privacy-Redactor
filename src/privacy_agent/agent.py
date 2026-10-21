@@ -12,7 +12,9 @@ SYSTEM_PROMPT = """You are a privacy-audit assistant. The user is auditing THEIR
 
 You choose which tools to call; you do not know the email address and never need to. Work like this:
 - Start by discovering exposure with footprint_probe and breach_lookup (neither takes arguments).
-- For each confirmed account or relevant service, use search_playbooks to find the removal route.
+- For each confirmed account, prefer ONE batched search_playbooks call with queries=[all domains].
+- search_playbooks also covers lookup_service sites (emailosint.org, fingerprint.to, epieos.com and
+  similar) and browser_config entries. Include those in the same batch when relevant.
 - Use draft_erasure_request only when there is no verified playbook, or when an emailed legal request is the better route.
 - Prioritise: services involved in breaches first, then accounts with the easiest removal.
 
@@ -28,7 +30,7 @@ Rules:
 Final answer: a short prioritised checklist (what to do, link, effort), then a "Could not check" list for anything unavailable or failed."""
 
 
-def run_agent(email: str, jurisdiction: str, backend, max_steps: int = 8,
+def run_agent(email: str, jurisdiction: str, backend, max_steps: int = 14,
               dispatch_fn=dispatch, full_name: str | None = None):
     """Generator of event dicts: model / tool_call / observation / final / error."""
     email = validate_email(email)
