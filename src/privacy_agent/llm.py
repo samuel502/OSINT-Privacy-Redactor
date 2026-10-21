@@ -117,27 +117,36 @@ class GroqBackend:
         self.model = model or os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
         self.tools = _openai_tools(declarations or DECLARATIONS)
         self.messages: list = []
+        self._reasoning = True
 
     def start(self, system: str, user: str) -> None:
         self.messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
+   def _kwargs(self):
+        # gpt-oss burns tokens in the reasoning field; Groq's free TPM cap is small.
+        return ({"reasoning_effort": os.environ.get("GROQ_REASONING_EFFORT", "low")}
+                if self._reasoning else {})
+       
     def _call(self):
         for attempt in range(3):
             try:
                 return self.client.chat.completions.create(
                     model=self.model, messages=self.messages, tools=self.tools,
-                    tool_choice="auto", temperature=0)
+                    tool_choice="auto", temperature=0, **self._kwargs())
+            except TypeError:  # model rejects reasoning_effort
+                self._reasoning = False
+                continue
             except Exception as e:  # noqa: BLE001
                 status = getattr(e, "status_code", None)
                 if (status == 429 or type(e).__name__ == "RateLimitError") and attempt < 2:
                     time.sleep(15 * (attempt + 1))
                     continue
-                if "tool_use_failed" in str(e) and attempt < 2:  # model emitted a malformed tool call; retry
+                if "tool_use_failed" in str(e) and attempt < 2:  # malformed tool call; retry
                     continue
                 if status == 429 or type(e).__name__ == "RateLimitError":
                     raise LLMError("Groq rate limit (429). Wait a minute or check console.groq.com limits.") from e
                 raise LLMError(f"Groq API error ({type(e).__name__}): {e}") from e
-
+                
     def generate(self) -> ModelTurn:
         resp = self._call()
         if not getattr(resp, "choices", None):
