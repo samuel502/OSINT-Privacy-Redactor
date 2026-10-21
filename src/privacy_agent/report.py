@@ -1,11 +1,11 @@
 """Readable report from tool results. Plain Python: no LLM, no network, easy to test.
 
 Two renderers, deliberately:
-  render_markdown()  -> Gradio and saved files (tables, links, collapsible lists)
-  render_terminal()  -> CLI (no HTML, wrapped to width, aligned columns)
+  build_report()     -> markdown, for Gradio and saved files
+  render_terminal()  -> plain text, for the CLI (no HTML, wrapped, aligned columns)
 
 The terminal one exists because a markdown table and a `<details>` tag are both unreadable
-when they are printed as literal text.
+when printed as literal text.
 """
 from __future__ import annotations
 
@@ -91,6 +91,11 @@ def effort_label(entry) -> str:
         return "settings"
     if t == "web_form":
         return "page + captcha" if e.get("needs_captcha") else "web form"
+    # opt_out_type absent (older playbooks.json entries): infer from what is recorded
+    if e.get("needs_captcha"):
+        return "page + captcha"
+    if e.get("requires_email_confirmation"):
+        return "web form"
     return "open page"
 
 
@@ -238,16 +243,18 @@ def build_report(footprint, breaches, playbooks, lookup_services, *,
 
 # --------------------------------------------------------------------------- terminal
 
-def _wrap(text: str, width: int, indent: str = "    ") -> list:
-    return textwrap.wrap(text, width=width - len(indent)) or [""]
+def _wrap(text: str, width: int, indent: str = "  ") -> list:
+    """Wrap to width and indent every line (textwrap.wrap does not indent for you)."""
+    lines = textwrap.wrap(text, width=max(24, width - len(indent))) or [""]
+    return [indent + l for l in lines]
 
 
-def _cols(rows, width: int, gap: int = 2) -> list:
-    """Two aligned columns: (left, right)."""
+def _cols(rows, gap: int = 2) -> list:
+    """Two aligned columns: (left, right). Never truncates the left column."""
     if not rows:
         return []
-    w = min(max(len(l) for l, _ in rows), max(24, width // 3))
-    return [f"  {l[:w].ljust(w)}{' ' * gap}{r}".rstrip() for l, r in rows]
+    w = max(len(l) for l, _ in rows)
+    return [f"  {l.ljust(w)}{' ' * gap}{r}".rstrip() for l, r in rows]
 
 
 def _rule(label: str, width: int) -> str:
@@ -263,7 +270,6 @@ def render_terminal(footprint, breaches, playbooks, lookup_services, *,
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         L.append(f"  {email}   ·   {stamp}")
 
-    # coverage + accounts
     fd = footprint.get("data", {})
     L.append(_rule("ACCOUNTS", W))
     if footprint.get("status") != "ok":
@@ -281,22 +287,18 @@ def render_terminal(footprint, breaches, playbooks, lookup_services, *,
             for d in acc:
                 m = (playbooks.get(d, {}).get("data", {}).get("matches") or [None])[0]
                 rows.append((display_name(d), effort_label(m)))
-            L += _cols(rows, W)
+            L += _cols(rows)
         else:
             L += ["  none confirmed"]
 
-    # breaches
     L.append(_rule("BREACHES", W))
     if breaches.get("status") != "ok":
         L += _wrap("The breach check could not run: " + str(breaches.get("error")), W)
     else:
         names = breaches.get("data", {}).get("breaches", [])
-        if names:
-            L += _wrap(f"{len(names)} known: " + ", ".join(names), W)
-        else:
-            L += _wrap("none known (not proof of safety)", W)
+        L += _wrap(f"{len(names)} known: " + ", ".join(names) if names
+                   else "none known (not proof of safety)", W)
 
-    # lookup sites
     if lookup_services:
         L.append(_rule("OPT OUT OF THE SITES THAT PROFILE YOU", W))
         rows = []
@@ -305,11 +307,10 @@ def render_terminal(footprint, breaches, playbooks, lookup_services, *,
             if not m.get("verified"):
                 label += " (unverified)"
             rows.append((label, effort_label(m)))
-        L += _cols(rows, W)
+        L += _cols(rows)
         L += _wrap("Opting out of one does not opt you out of the others, and it removes you "
                    "from that site's answer, not the breach data underneath.", W)
 
-    # checklist
     if checklist:
         L.append(_rule("DO THIS FIRST", W))
         for track, title in (("A", "Stop being findable"), ("B", "Shrink the footprint")):
@@ -317,20 +318,15 @@ def render_terminal(footprint, breaches, playbooks, lookup_services, *,
             if not rows:
                 continue
             L += ["", f"  {title}"]
-            L += _cols([(f"{n}. {i['service']}", i["auto"]) for n, i in enumerate(rows, 1)], W)
+            L += _cols([(f"{n}. {i['service']}", i["auto"]) for n, i in enumerate(rows, 1)])
             for n, i in enumerate(rows, 1):
-                dest = i.get("url") or (f"email {i['mailto']}" if i.get("mailto") else "no route on file")
-                dest = dest.replace("https://", "")
-                L += _wrap(f"{n}. {dest}", W, "       ")
+                dest = i.get("url") or (f"email {i['mailto']}" if i.get("mailto")
+                                        else "no route on file: send an erasure request")
+                L += _wrap(dest.replace("https://", ""), W, " " * (4 + len(str(n))))
 
-    # drafts
     if drafts:
         L.append(_rule("ERASURE DRAFTS (nothing is sent automatically)", W))
         for d in drafts:
             L += ["", f"  {d.get('platform')} — {d.get('subject')}"]
-            L += _wrap(f"To: {d.get('platform')}", W, "      ")
         L += _wrap("Full text is in the saved report.", W)
-
-    if not checklist and not drafts:
-        L.append(_rule("NOTHING TO ACTION", W))
     return "\n".join(L)
