@@ -126,7 +126,7 @@ class GroqBackend:
         # gpt-oss burns tokens in the reasoning field; Groq's free TPM cap is small.
         return ({"reasoning_effort": os.environ.get("GROQ_REASONING_EFFORT", "low")}
                 if self._reasoning else {})
-       
+
     def _call(self):
         for attempt in range(3):
             try:
@@ -146,7 +146,7 @@ class GroqBackend:
                 if status == 429 or type(e).__name__ == "RateLimitError":
                     raise LLMError("Groq rate limit (429). Wait a minute or check console.groq.com limits.") from e
                 raise LLMError(f"Groq API error ({type(e).__name__}): {e}") from e
-                
+
     def generate(self) -> ModelTurn:
         resp = self._call()
         if not getattr(resp, "choices", None):
@@ -178,10 +178,21 @@ class GroqBackend:
 
 
 def make_backend(provider: str | None = None, api_key: str | None = None, model: str | None = None):
-    """provider: 'groq' | 'gemini'. Default: LLM_PROVIDER env, else groq if GROQ_API_KEY is set, else gemini."""
+    """provider: 'groq' | 'gemini'.
+
+    Resolution order: explicit argument, then LLM_PROVIDER, then whichever key is actually set.
+    Groq wins when both are set (its free tier allows more requests per minute; Gemini's has
+    small daily limits). If neither key is set we say so, instead of silently picking one.
+    """
     provider = (provider or os.environ.get("LLM_PROVIDER") or "").lower()
     if not provider:
-        provider = "groq" if os.environ.get("GROQ_API_KEY") else "gemini"
+        if os.environ.get("GROQ_API_KEY"):
+            provider = "groq"
+        elif os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
+            provider = "gemini"
+        else:
+            raise LLMError("No API key found. Put GROQ_API_KEY (or GEMINI_API_KEY) in .env, "
+                           "or set one in the environment. `--provider` does not supply a key.")
     if provider == "groq":
         return GroqBackend(api_key=api_key, model=model)
     if provider == "gemini":
