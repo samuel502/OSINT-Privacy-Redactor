@@ -1,9 +1,9 @@
 """Local runner.
   python cli.py me@example.com                # full deterministic audit, no API key
-  python cli.py me@example.com --agent        # agentic audit (needs GROQ_API_KEY / GEMINI_API_KEY)
+  python cli.py me@example.com --agent        # agentic audit (needs a key; see .env.example)
   python cli.py me@example.com --out reports  # also write report.md / report.json
 
-The terminal prints a plain-text report (no HTML, wrapped to --width). The saved files stay
+The terminal prints a plain-text report (no HTML, wrapped to --width). Saved files stay
 markdown, because that is what renders in a viewer or on GitHub.
 """
 import argparse
@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src
 
 from privacy_agent.agent import format_event, run_agent  # noqa: E402
 from privacy_agent.banner import render_banner  # noqa: E402
+from privacy_agent.env import load_env  # noqa: E402
 from privacy_agent.llm import LLMError, make_backend  # noqa: E402
 from privacy_agent.pipeline import LOOKUP_TARGETS, run_pipeline  # noqa: E402
 from privacy_agent.report import render_terminal  # noqa: E402
@@ -41,6 +42,8 @@ def _print_report(bundle, width):
 
 
 def main():
+    load_env()  # .env wins nothing over the real environment; keeps keys out of shell history
+
     p = argparse.ArgumentParser(description="Audit an email footprint (your own address).")
     p.add_argument("email")
     p.add_argument("--name", default=None, help="Full name, used in erasure drafts.")
