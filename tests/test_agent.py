@@ -114,7 +114,7 @@ def test_make_backend_selection(monkeypatch):
     import pytest
     for k in ("GROQ_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "LLM_PROVIDER"):
         monkeypatch.delenv(k, raising=False)
-    with pytest.raises(LLMError, match="Gemini"):
+    with pytest.raises(LLMError, match="API key"):
         make_backend()
     with pytest.raises(LLMError, match="Groq"):
         make_backend("groq")
