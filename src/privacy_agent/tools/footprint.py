@@ -109,8 +109,17 @@ def footprint_probe(email: str) -> dict:
                         except Exception:  # noqa: BLE001
                             extras = {}
                         break
-            except subprocess.TimeoutExpired:
-                sources["holehe"] = f"error: timed out after {HOLEHE_TIMEOUT}s"
+            except subprocess.TimeoutExpired as e:
+                partial = e.stdout or b""
+                if isinstance(partial, bytes):
+                    partial = partial.decode("utf-8", "replace")
+                found, lim, absent_n = parse_holehe_text(partial)
+                if found or lim or absent_n:
+                    confirmed.update(found)
+                    limited, absent = lim, absent_n
+                    sources["holehe"] = f"ok (partial: killed at {HOLEHE_TIMEOUT}s)"
+                else:
+                    sources["holehe"] = f"error: timed out after {HOLEHE_TIMEOUT}s, nothing parsed"
             except Exception as e:  # noqa: BLE001
                 sources["holehe"] = f"error: {e}"
 
