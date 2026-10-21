@@ -25,7 +25,7 @@ def run_pipeline(email: str, jurisdiction: str = "gdpr", full_name: str | None =
     email = validate_email(email)
     ctx = {"email": email, "jurisdiction": jurisdiction, "full_name": full_name}
 
-    yield {"type": "step", "text": "Probing services for an account (holehe + Gravatar, up to ~2.5 min)..."}
+    yield {"type": "step", "text": "Probing services for an account (holehe + Gravatar, up to ~5 min)..."}
     footprint = dispatch("footprint_probe", {}, ctx)
     yield {"type": "step", "text": f"  -> account probe: {footprint['status']}"}
 
