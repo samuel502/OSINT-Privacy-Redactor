@@ -94,6 +94,18 @@ def effort_label(entry) -> str:
     return "open page"
 
 
+def _where(item):
+    """Link for a checklist item or a raw playbook match. The two carry different key names."""
+    label = item.get("service") or item.get("name") or item.get("domain") or "?"
+    url = item.get("url") or item.get("opt_out_url")
+    mail = item.get("mailto") or item.get("opt_out_email")
+    if url:
+        return f"[{label}]({url})"
+    if mail:
+        return f"email `{mail}`"
+    return "_no route on file: send an erasure request_"
+
+
 def build_checklist(footprint, breaches, routes) -> list:
     """Ordered, actionable plan. Deterministic. priority 1 = do first."""
     items, seen = [], set()
@@ -132,14 +144,6 @@ def build_checklist(footprint, breaches, routes) -> list:
             })
     items.sort(key=lambda i: (i["priority"], i["service"]))
     return items
-
-
-def _where(item):
-    if item.get("url"):
-        return f"[{item['service']}]({item['url']})"
-    if item.get("mailto"):
-        return f"email `{item['mailto']}`"
-    return "_no route on file: send an erasure request_"
 
 
 def render_checklist(items) -> str:
