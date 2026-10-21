@@ -122,7 +122,7 @@ class GroqBackend:
     def start(self, system: str, user: str) -> None:
         self.messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
-   def _kwargs(self):
+    def _kwargs(self):
         # gpt-oss burns tokens in the reasoning field; Groq's free TPM cap is small.
         return ({"reasoning_effort": os.environ.get("GROQ_REASONING_EFFORT", "low")}
                 if self._reasoning else {})
