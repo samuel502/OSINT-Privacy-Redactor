@@ -112,6 +112,8 @@ def footprint_probe(email: str, retry_blocked: bool = True) -> dict:
     """Probe for accounts. `retry_blocked` runs a second pass to recover throttled sites."""
     email = validate_email(email)
     sources, passes, extras = {}, [], {}
+    confirmed, limited_domains, absent = set(), set(), set()
+    holehe_ok = False
 
     holehe = shutil.which("holehe")
     if not holehe:
@@ -124,15 +126,15 @@ def footprint_probe(email: str, retry_blocked: bool = True) -> dict:
                     time.sleep(RETRY_PAUSE_S)
                 try:
                     proc = _run_holehe(holehe, email, tmp, with_csv=True)
-                    found, lim, absent = _parse_holehe_full(proc.stdout)
-                    if not (found or lim or absent) and proc.returncode != 0:
+                    found, lim, miss = _parse_holehe_full(proc.stdout)
+                    if not (found or lim or miss) and proc.returncode != 0:
                         proc = _run_holehe(holehe, email, tmp, with_csv=False)  # -C unsupported
-                        found, lim, absent = _parse_holehe_full(proc.stdout)
-                    if not (found or lim or absent):
+                        found, lim, miss = _parse_holehe_full(proc.stdout)
+                    if not (found or lim or miss):
                         detail = (proc.stderr or proc.stdout or "no output").strip()[:200]
                         last_error = f"error: no results parsed ({detail})"
                         break
-                    passes.append((found, lim, absent))
+                    passes.append((found, lim, miss))
                     if not extras:
                         for path in glob.glob(os.path.join(tmp, "*.csv")):
                             try:
@@ -146,36 +148,32 @@ def footprint_probe(email: str, retry_blocked: bool = True) -> dict:
                     partial = e.stdout or b""
                     if isinstance(partial, bytes):
                         partial = partial.decode("utf-8", "replace")
-                    found, lim, absent = _parse_holehe_full(partial)
-                    if found or lim or absent:
-                        passes.append((found, lim, absent))
+                    found, lim, miss = _parse_holehe_full(partial)
+                    if found or lim or miss:
+                        passes.append((found, lim, miss))
                     last_error = f"error: timed out after {HOLEHE_TIMEOUT}s"
                     break
                 except Exception as e:  # noqa: BLE001
                     last_error = f"error: {e}"
                     break
 
-            if not passes:
-                sources["holehe"] = last_error or "error: no results"
+            if passes:
+                confirmed, limited_domains, absent = merge_passes(passes)
+                sources["holehe"] = "ok" if len(passes) == 1 else f"ok ({len(passes)} passes)"
+                holehe_ok = True
             else:
-                found, limited, absent = merge_passes(passes)
-                sources["holehe"] = ("ok" if len(passes) == 1
-                                     else f"ok ({len(passes)} passes)")
-                confirmed, limited_domains, absent = found, limited, absent
-
-    if not holehe:
-        confirmed, limited_domains, absent = set(), [], 0
+                sources["holehe"] = last_error or "error: no results"
 
     grav = _gravatar(email)
     sources["gravatar"] = {True: "found", False: "not_found", None: "unknown"}[grav]
     if grav:
         confirmed.add("gravatar.com")
 
-    if sources.get("holehe") != "ok" and not str(sources.get("holehe", "")).startswith("ok") and grav is None:
+    if not holehe_ok and grav is None:
         return result("unavailable", {"sources": sources}, "holehe+gravatar",
                       error="No footprint source could run.")
 
-    checked = len(confirmed - {"gravatar.com"}) + len(limited_domains) + absent
+    checked = len(confirmed - {"gravatar.com"}) + len(limited_domains) + len(absent)
     note = "Only confirmed registrations are listed. Absence is NOT proof an account doesn't exist."
     if limited_domains:
         note += (f" {len(limited_domains)} of {checked} sites were rate-limited and NOT checked; "
@@ -186,7 +184,8 @@ def footprint_probe(email: str, retry_blocked: bool = True) -> dict:
          "rate_limited_or_unchecked": sorted(limited_domains),
          "coverage": "partial" if limited_domains else "full",
          "holehe_counts": {"registered": len(confirmed - {"gravatar.com"}),
-                           "not_registered": absent, "rate_limited": len(limited_domains)},
+                           "not_registered": len(absent),
+                           "rate_limited": len(limited_domains)},
          "account_hints": {d: h for d, h in extras.items() if d in confirmed},
          "sources": sources},
         "holehe+gravatar", note=note)
