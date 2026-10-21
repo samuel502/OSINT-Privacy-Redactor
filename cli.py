@@ -2,6 +2,9 @@
   python cli.py me@example.com                # full deterministic audit, no API key
   python cli.py me@example.com --agent        # agentic audit (needs GROQ_API_KEY / GEMINI_API_KEY)
   python cli.py me@example.com --out reports  # also write report.md / report.json
+
+The terminal prints a plain-text report (no HTML, wrapped to --width). The saved files stay
+markdown, because that is what renders in a viewer or on GitHub.
 """
 import argparse
 import json
@@ -13,8 +16,28 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src
 from privacy_agent.agent import format_event, run_agent  # noqa: E402
 from privacy_agent.banner import render_banner  # noqa: E402
 from privacy_agent.llm import LLMError, make_backend  # noqa: E402
-from privacy_agent.pipeline import run_pipeline  # noqa: E402
+from privacy_agent.pipeline import LOOKUP_TARGETS, run_pipeline  # noqa: E402
+from privacy_agent.report import render_terminal  # noqa: E402
 from privacy_agent.schema import validate_email  # noqa: E402
+
+
+def _playbook_map(routes):
+    """render_terminal expects domain -> tool-result shape; the bundle holds domain -> matches."""
+    return {d: {"data": {"matches": m}} for d, m in routes.items() if m}
+
+
+def _print_report(bundle, width):
+    print("\n" + "=" * 70)
+    print(render_terminal(
+        bundle["footprint"],
+        bundle["breaches"],
+        _playbook_map(bundle["routes"]),
+        [e for d in LOOKUP_TARGETS for e in (bundle["routes"].get(d) or [])],
+        drafts=bundle["drafts"],
+        checklist=bundle["checklist"],
+        email=bundle["email"],
+        width=width,
+    ))
 
 
 def main():
@@ -29,6 +52,7 @@ def main():
     p.add_argument("--model", default=None)
     p.add_argument("--max-steps", type=int, default=14)
     p.add_argument("--out", default=None, help="Directory to write report.md / report.json.")
+    p.add_argument("--width", type=int, default=88, help="Terminal report width.")
     p.add_argument("--no-banner", action="store_true")
     a = p.parse_args()
 
@@ -54,8 +78,9 @@ def main():
             print(ev["text"])
         else:
             bundle = ev["bundle"]
-    print("\n" + "=" * 70 + "\n")
-    print(bundle["report_md"])
+
+    _print_report(bundle, a.width)
+
     if a.out:
         os.makedirs(a.out, exist_ok=True)
         with open(os.path.join(a.out, "report.md"), "w", encoding="utf-8") as f:
