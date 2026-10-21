@@ -10,10 +10,13 @@ import gradio as gr  # noqa: E402
 
 from privacy_agent.agent import format_event, run_agent  # noqa: E402
 from privacy_agent.banner import banner_html  # noqa: E402
+from privacy_agent.env import load_env  # noqa: E402
 from privacy_agent.llm import LLMError, make_backend  # noqa: E402
 from privacy_agent.pipeline import run_pipeline  # noqa: E402
 from privacy_agent.report import render_checklist, render_drafts  # noqa: E402
 from privacy_agent.schema import validate_email  # noqa: E402
+
+load_env()
 
 JURISDICTIONS = [("EU / EEA (GDPR)", "gdpr"), ("UK (UK GDPR)", "uk_gdpr"),
                  ("California (CCPA)", "ccpa"), ("Other", "other")]
@@ -80,7 +83,7 @@ with gr.Blocks(title="OSINT Privacy Redactor", theme=gr.themes.Soft()) as demo:
         with gr.Row():
             provider = gr.Dropdown([("Groq", "groq"), ("Gemini", "gemini")], value="groq",
                                    label="Provider")
-            api_key = gr.Textbox(label="API key (or set GROQ_API_KEY / GEMINI_API_KEY)",
+            api_key = gr.Textbox(label="API key (masked; or leave blank if set in .env)",
                                  type="password")
         run_agent_btn = gr.Button("Run agentic audit")
     with gr.Tabs():
