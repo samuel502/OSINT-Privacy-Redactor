@@ -61,6 +61,7 @@ def test_footprint_reports_partial_coverage_from_real_holehe_output(monkeypatch)
     from privacy_agent.tools import footprint
     monkeypatch.setattr(footprint.shutil, "which", lambda _: "holehe")
     monkeypatch.setattr(footprint, "_gravatar", lambda _: False)
+    monkeypatch.setattr(footprint, "RETRY_PAUSE_S", 0) 
     monkeypatch.setattr(footprint.subprocess, "run",
                         lambda *a, **k: NS(stdout=HOLEHE_OUT, stderr="", returncode=0))
     r = footprint.footprint_probe("a@b.com")
