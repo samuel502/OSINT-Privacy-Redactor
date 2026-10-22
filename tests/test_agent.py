@@ -120,3 +120,21 @@ def test_make_backend_selection(monkeypatch):
         make_backend("groq")
     with pytest.raises(LLMError, match="Unknown provider"):
         make_backend("nope")
+
+
+def test_last_step_forces_a_final_answer_instead_of_stopping_silently():
+    turns = [ModelTurn(calls=[ToolCall("search_playbooks", {"query": str(i)})]) for i in range(2)]
+    turns.append(ModelTurn(text="Plan from what I have."))
+    backend = ScriptedBackend(turns)
+    events = list(run_agent("me@example.com", "gdpr", backend, max_steps=3,
+                            dispatch_fn=fake_dispatch_factory([])))
+    assert events[-1]["type"] == "final" and events[-1]["text"] == "Plan from what I have."
+    assert events[-1].get("forced") is True
+    assert backend.last_allow_tools is False and backend.notes
+
+
+def test_forced_turn_that_still_calls_tools_ends_honestly():
+    backend = ScriptedBackend([ModelTurn(calls=[ToolCall("breach_lookup")]) for _ in range(5)])
+    events = list(run_agent("me@example.com", "gdpr", backend, max_steps=2,
+                            dispatch_fn=fake_dispatch_factory([])))
+    assert events[-1]["type"] == "final" and events[-1]["truncated"] is True

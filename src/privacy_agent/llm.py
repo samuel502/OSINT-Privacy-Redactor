@@ -69,7 +69,11 @@ class GeminiBackend:
                                    "wait, or set GEMINI_MODEL to another model.") from e
                 raise LLMError(f"Gemini API error {code}: {e}") from e
 
-    def generate(self) -> ModelTurn:
+    def add_user_note(self, text: str) -> None:
+        self.contents.append(self.types.Content(role="user", parts=[self.types.Part.from_text(text=text)]))
+
+    def generate(self, allow_tools: bool = True) -> ModelTurn:
+        # allow_tools=False is enforced by the prompt only; the agent loop checks the result.
         resp = self._call()
         if not resp.candidates or not resp.candidates[0].content:
             raise LLMError("Gemini returned no content (possibly blocked or empty).")
@@ -127,12 +131,15 @@ class GroqBackend:
         return ({"reasoning_effort": os.environ.get("GROQ_REASONING_EFFORT", "low")}
                 if self._reasoning else {})
 
-    def _call(self):
+    def add_user_note(self, text: str) -> None:
+        self.messages.append({"role": "user", "content": text})
+
+    def _call(self, allow_tools: bool = True):
         for attempt in range(3):
             try:
                 return self.client.chat.completions.create(
                     model=self.model, messages=self.messages, tools=self.tools,
-                    tool_choice="auto", temperature=0, **self._kwargs())
+                    tool_choice="auto" if allow_tools else "none", temperature=0, **self._kwargs())
             except TypeError:  # model rejects reasoning_effort
                 self._reasoning = False
                 continue
@@ -147,8 +154,8 @@ class GroqBackend:
                     raise LLMError("Groq rate limit (429). Wait a minute or check console.groq.com limits.") from e
                 raise LLMError(f"Groq API error ({type(e).__name__}): {e}") from e
 
-    def generate(self) -> ModelTurn:
-        resp = self._call()
+    def generate(self, allow_tools: bool = True) -> ModelTurn:
+        resp = self._call(allow_tools)
         if not getattr(resp, "choices", None):
             raise LLMError("Groq returned no choices.")
         msg = resp.choices[0].message
@@ -209,7 +216,11 @@ class ScriptedBackend:
     def start(self, system: str, user: str) -> None:
         self.system, self.user = system, user
 
-    def generate(self) -> ModelTurn:
+    def add_user_note(self, text: str) -> None:
+        self.notes = getattr(self, "notes", []) + [text]
+
+    def generate(self, allow_tools: bool = True) -> ModelTurn:
+        self.last_allow_tools = allow_tools
         if self.i >= len(self.turns):
             raise LLMError("ScriptedBackend ran out of turns.")
         turn = self.turns[self.i]

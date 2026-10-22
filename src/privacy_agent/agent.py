@@ -41,11 +41,22 @@ def run_agent(email: str, jurisdiction: str, backend, max_steps: int = 14,
                       f"Audit my own email address. My legal jurisdiction: {jurisdiction}. "
                       "Find my exposure and give me a removal plan.")
         for step in range(1, max_steps + 1):
-            turn = backend.generate()
+            last = step == max_steps
+            if last and max_steps > 1:
+                # Out of budget: ask for the answer now, from what the tools already returned.
+                backend.add_user_note(
+                    "Tool budget used up. Do not call any more tools. Write the final answer now "
+                    "from the observations you already have, and list anything you could not check.")
+            turn = backend.generate(allow_tools=not (last and max_steps > 1))
+            if last and turn.calls:
+                turn.calls = []  # tools were disallowed; ignore any attempted call
             if turn.text and turn.calls:
                 yield {"type": "model", "step": step, "text": turn.text}
             if not turn.calls:
-                yield {"type": "final", "step": step, "text": turn.text or "(The model returned no answer.)"}
+                if last and not turn.text:
+                    break
+                yield {"type": "final", "step": step, "text": turn.text or "(The model returned no answer.)",
+                       **({"forced": True} if last else {})}
                 return
             results = []
             for call in turn.calls:
