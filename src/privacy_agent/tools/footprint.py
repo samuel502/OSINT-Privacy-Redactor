@@ -1,92 +1,96 @@
 """Tool 1 (discovery): which services have an account registered to this email?
 
-Uses holehe (probes sign-up / password-reset flows) plus a Gravatar check.
-holehe marks every site as  [+] registered,  [-] not registered,  [x] rate-limited (NOT checked).
-We report confirmed accounts AND the rate-limited sites separately, so "not checked" is never
-mistaken for "no account". No guessed or default entries.
+holehe probes sign-up / password-reset flows; a Gravatar check covers the one profile service
+that answers by hash. Optionally a second source (fingerprint.to, `deep=True`) resolves 200+
+platforms in a browser and returns the profile fields behind each match.
 
-holehe fires every module at once, so a single pass throttles a large fraction of sites. We run
-it twice with a pause and merge: a definitive answer from either pass wins, so a site throttled
-in pass 1 but answered in pass 2 counts as answered. Sites still throttled after both passes are
-the ones reported as not checked.
+holehe runs through tools/_holehe_runner.py, a subprocess, because:
+
+  * holehe's own CLI builds its httpx client with follow_redirects left at the default (False).
+    Any site that has since moved host answers 3xx with an empty body, the module crashes on
+    the parse, and holehe reports the crash as "[x] rate limit". Measured on the project
+    author's own address: 118 of 121 sites "rate limited" via the CLI, 65 via this runner.
+  * it also keeps holehe (GPLv3) on the far side of a process boundary, and hands back typed
+    records instead of console text to regex.
+
+holehe resolves each site as exists / not-registered / unresolved. Unresolved means NOT
+checked (throttled or the module failed) and is reported separately, so "couldn't check" is
+never read as "no account". Nothing is guessed or padded.
 """
 from __future__ import annotations
 
-import csv
-import glob
 import hashlib
+import json
 import os
-import re
-import shutil
 import subprocess
-import tempfile
+import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 from ..schema import result, validate_email
 
-HOLEHE_TIMEOUT = 150      # seconds per pass
-RETRY_PAUSE_S = 18        # pause between passes; lets per-site rate limits lapse
-MAX_PASSES = 2
+try:
+    from .fingerprint_to import fingerprint_probe as _fingerprint_probe
+except ImportError:                     # optional second source, added separately
+    _fingerprint_probe = None
 
-# "[+] domain.tld [optional hints]", "[-] domain.tld", "[x] domain.tld"
-_LINE = re.compile(r"^\[(?P<s>[+\-x])\]\s+(?P<d>[A-Za-z0-9][A-Za-z0-9.\-]*\.[A-Za-z]{2,})(?:\s+(?P<extra>.+))?$")
+RUNNER = Path(__file__).with_name("_holehe_runner.py")
+RUNNER_TIMEOUT = int(os.environ.get("HOLEHE_RUNNER_TIMEOUT", "300"))
+MAX_PASSES = int(os.environ.get("HOLEHE_MAX_PASSES", "2"))
+PASS_PAUSE_S = int(os.environ.get("HOLEHE_PASS_PAUSE", "8"))
 
 
-def _parse_holehe_full(text: str):
-    """Return (confirmed, rate_limited, absent) as sets of domains."""
-    confirmed, limited, absent = set(), set(), set()
-    for line in text.splitlines():
-        m = _LINE.match(line.strip())
-        if not m:
-            continue  # legend, banner, and summary lines don't match
-        domain, status = m["d"].lower(), m["s"]
-        if status == "+":
-            confirmed.add(domain)
-        elif status == "x":
-            limited.add(domain)
+def _run_runner(email: str) -> list:
+    """One full holehe sweep. Raises on failure."""
+    proc = subprocess.run([sys.executable, str(RUNNER), email],
+                          capture_output=True, text=True, timeout=RUNNER_TIMEOUT)
+    lines = (proc.stdout or "").strip().splitlines()
+    if not lines:
+        raise RuntimeError((proc.stderr or "no output").strip()[:300])
+    payload = json.loads(lines[-1])
+    if not payload.get("ok"):
+        raise RuntimeError(str(payload.get("error"))[:300])
+    return payload["records"]
+
+
+def _classify(records):
+    """Split records into (confirmed, unresolved, absent, errored, hints)."""
+    confirmed, unresolved, absent, errored, hints = set(), set(), set(), set(), {}
+    for r in records:
+        d = (r.get("domain") or r.get("name") or "").strip().lower()
+        if not d:
+            continue
+        if r.get("error"):
+            errored.add(d)
+        elif r.get("exists"):
+            confirmed.add(d)
+        elif r.get("rateLimit"):
+            unresolved.add(d)
         else:
-            absent.add(domain)
-    return confirmed, limited, absent
-
-
-def parse_holehe_text(text: str):
-    """Return (confirmed, rate_limited, not_registered_count) from holehe's console output."""
-    confirmed, limited, absent = _parse_holehe_full(text)
-    return sorted(confirmed), sorted(limited), len(absent)
+            absent.add(d)
+        if r.get("exists"):
+            extra = {k: v for k, v in {"email_recovery": r.get("emailrecovery"),
+                                       "phone_number": r.get("phoneNumber"),
+                                       "others": r.get("others")}.items() if v}
+            if extra:
+                hints[d] = extra
+    return confirmed, unresolved, absent, errored, hints
 
 
 def merge_passes(passes):
-    """passes: list of (confirmed, limited, absent) sets. '+' beats '-' beats 'x'."""
-    confirmed, limited, absent = set(), set(), set()
-    for c, l, a in passes:
+    """passes: list of (confirmed, unresolved, absent) sets.
+    A confirmed hit beats a definite miss, which beats 'never resolved'."""
+    confirmed, unresolved, absent = set(), set(), set()
+    for c, u, a in passes:
         confirmed |= c
-        limited |= l
+        unresolved |= u
         absent |= a
-    limited -= confirmed
-    limited -= absent      # a definitive "not registered" beats "couldn't check"
-    absent -= confirmed    # registered in one pass beats not-registered in another
-    return confirmed, limited, absent
-
-
-def parse_holehe_csv_extras(path: str) -> dict:
-    """Best-effort: masked recovery email / phone / other hints for registered sites.
-    Header matching is case-insensitive. Never raises on odd files (caller wraps in try)."""
-    out = {}
-    with open(path, newline="", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            r = {(k or "").strip().lower(): (v or "").strip() for k, v in row.items()}
-            if r.get("exists", "").lower() != "true":
-                continue
-            domain = (r.get("domain") or r.get("name") or "").lower()
-            hints = {k: v for k, v in {
-                "email_recovery": r.get("email recovery", ""),
-                "phone_number": r.get("phone number", ""),
-                "others": r.get("others", "")}.items() if v and v.lower() not in {"none", "false"}}
-            if domain and hints:
-                out[domain] = hints
-    return out
+    unresolved -= confirmed
+    unresolved -= absent
+    absent -= confirmed
+    return confirmed, unresolved, absent
 
 
 def _gravatar(email: str):
@@ -99,93 +103,91 @@ def _gravatar(email: str):
             return True if resp.status == 200 else None
     except urllib.error.HTTPError as e:
         return False if e.code == 404 else None
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
 
-def _run_holehe(holehe: str, email: str, tmp: str, with_csv: bool):
-    cmd = [holehe, "--no-color", "--no-clear"] + (["-C"] if with_csv else []) + [email]
-    return subprocess.run(cmd, cwd=tmp, capture_output=True, text=True, timeout=HOLEHE_TIMEOUT)
+def footprint_probe(email: str, retry_blocked: bool = True, deep: bool = False) -> dict:
+    """Probe for accounts.
 
-
-def footprint_probe(email: str, retry_blocked: bool = True) -> dict:
-    """Probe for accounts. `retry_blocked` runs a second pass to recover throttled sites."""
+    retry_blocked: a sweep is ~5s, so a second pass to recover unresolved sites is cheap.
+    deep:          also run the fingerprint.to second source (needs playwright; ~2-3 min).
+    """
     email = validate_email(email)
-    sources, passes, extras = {}, [], {}
-    confirmed, limited_domains, absent = set(), set(), set()
-    holehe_ok = False
+    sources, hints = {}, {}
+    confirmed, limited_domains, absent, errored = set(), set(), set(), set()
+    holehe_ok, total_sites = False, 0
 
-    holehe = shutil.which("holehe")
-    if not holehe:
-        sources["holehe"] = "missing (pip install holehe)"
+    if not RUNNER.exists():
+        sources["holehe"] = f"missing {RUNNER.name}"
     else:
-        with tempfile.TemporaryDirectory() as tmp:
-            last_error = None
-            for attempt in range(MAX_PASSES if retry_blocked else 1):
-                if attempt:
-                    time.sleep(RETRY_PAUSE_S)
-                try:
-                    proc = _run_holehe(holehe, email, tmp, with_csv=True)
-                    found, lim, miss = _parse_holehe_full(proc.stdout)
-                    if not (found or lim or miss) and proc.returncode != 0:
-                        proc = _run_holehe(holehe, email, tmp, with_csv=False)  # -C unsupported
-                        found, lim, miss = _parse_holehe_full(proc.stdout)
-                    if not (found or lim or miss):
-                        detail = (proc.stderr or proc.stdout or "no output").strip()[:200]
-                        last_error = f"error: no results parsed ({detail})"
-                        break
-                    passes.append((found, lim, miss))
-                    if not extras:
-                        for path in glob.glob(os.path.join(tmp, "*.csv")):
-                            try:
-                                extras = parse_holehe_csv_extras(path)
-                            except Exception:  # noqa: BLE001
-                                extras = {}
-                            break
-                    if not lim:
-                        break  # nothing throttled, no reason for another pass
-                except subprocess.TimeoutExpired as e:
-                    partial = e.stdout or b""
-                    if isinstance(partial, bytes):
-                        partial = partial.decode("utf-8", "replace")
-                    found, lim, miss = _parse_holehe_full(partial)
-                    if found or lim or miss:
-                        passes.append((found, lim, miss))
-                    last_error = f"error: timed out after {HOLEHE_TIMEOUT}s"
-                    break
-                except Exception as e:  # noqa: BLE001
-                    last_error = f"error: {e}"
-                    break
+        passes, last_error = [], None
+        for attempt in range(max(1, MAX_PASSES) if retry_blocked else 1):
+            if attempt:
+                time.sleep(PASS_PAUSE_S)
+            try:
+                records = _run_runner(email)
+                if not records:
+                    raise RuntimeError("runner returned no records")
+            except Exception as e:  # noqa: BLE001
+                last_error = f"error: {e}"
+                break
+            c, u, a, er, h = _classify(records)
+            passes.append((c, u, a))
+            total_sites = max(total_sites, len(records))
+            errored |= er
+            hints.update({k: v for k, v in h.items() if k not in hints})
+            if not u:
+                break                      # nothing unresolved, no reason for another pass
+        if passes:
+            confirmed, limited_domains, absent = merge_passes(passes)
+            holehe_ok = True
+            suffix = "" if len(passes) == 1 else f", {len(passes)} passes"
+            sources["holehe"] = f"ok ({total_sites} sites{suffix})"
+        else:
+            sources["holehe"] = last_error or "error: no results"
 
-            if passes:
-                confirmed, limited_domains, absent = merge_passes(passes)
-                sources["holehe"] = "ok" if len(passes) == 1 else f"ok ({len(passes)} passes)"
-                holehe_ok = True
+    profiles = []
+    if deep:
+        if _fingerprint_probe is None:
+            sources["fingerprint.to"] = "missing module (tools/fingerprint_to.py)"
+        else:
+            fp = _fingerprint_probe(email)
+            if fp.get("status") == "ok":
+                profiles = fp["data"]["profiles"]
+                confirmed |= set(fp["data"]["domains"])
+                sources["fingerprint.to"] = f"ok ({len(profiles)} profiles)"
             else:
-                sources["holehe"] = last_error or "error: no results"
+                sources["fingerprint.to"] = fp.get("error") or "unavailable"
 
     grav = _gravatar(email)
     sources["gravatar"] = {True: "found", False: "not_found", None: "unknown"}[grav]
     if grav:
         confirmed.add("gravatar.com")
 
-    if not holehe_ok and grav is None:
+    if not holehe_ok and grav is None and not profiles:
         return result("unavailable", {"sources": sources}, "holehe+gravatar",
                       error="No footprint source could run.")
 
     checked = len(confirmed - {"gravatar.com"}) + len(limited_domains) + len(absent)
     note = "Only confirmed registrations are listed. Absence is NOT proof an account doesn't exist."
     if limited_domains:
-        note += (f" {len(limited_domains)} of {checked} sites were rate-limited and NOT checked; "
-                 "those may hold accounts. Re-run later or from a different network (VPN/shared IPs trigger this).")
+        note += (f" {len(limited_domains)} of {checked} sites did not resolve (throttled or the "
+                 "checker failed) and were NOT checked; those may hold accounts.")
+    if errored:
+        note += f" {len(errored)} site(s) errored and are not counted as checked."
+    if profiles:
+        note += f" {len(profiles)} profiles were read from fingerprint.to (second source)."
     return result(
         "ok",
         {"confirmed_accounts": sorted(confirmed),
          "rate_limited_or_unchecked": sorted(limited_domains),
+         "errored": sorted(errored),
+         "profiles": profiles,
          "coverage": "partial" if limited_domains else "full",
          "holehe_counts": {"registered": len(confirmed - {"gravatar.com"}),
                            "not_registered": len(absent),
                            "rate_limited": len(limited_domains)},
-         "account_hints": {d: h for d, h in extras.items() if d in confirmed},
+         "account_hints": {d: h for d, h in hints.items() if d in confirmed},
          "sources": sources},
         "holehe+gravatar", note=note)
