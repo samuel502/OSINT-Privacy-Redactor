@@ -1,5 +1,6 @@
 """Local runner.
   python cli.py me@example.com                # full deterministic audit, no API key
+  python cli.py me@example.com --deep         # + fingerprint.to second source (needs playwright)
   python cli.py me@example.com --agent        # agentic audit (needs a key; see .env.example)
   python cli.py me@example.com --out reports  # also write report.md / report.json
 
@@ -48,6 +49,11 @@ def main():
     p.add_argument("email")
     p.add_argument("--name", default=None, help="Full name, used in erasure drafts.")
     p.add_argument("--jurisdiction", default="gdpr", choices=["gdpr", "uk_gdpr", "ccpa", "other"])
+    p.add_argument("--deep", action="store_true",
+                   help="Also run the fingerprint.to second source (needs playwright). "
+                        "Adds ~2-3 min. Works in --agent mode too.")
+    p.add_argument("--headed", action="store_true",
+                   help="Show the browser window so you can clear a bot check by hand.")
     p.add_argument("--agent", action="store_true", help="Use the LLM agent instead of the pipeline.")
     p.add_argument("--tools-only", action="store_true",
                    help="Deprecated alias: the plain pipeline is now the default.")
@@ -58,6 +64,12 @@ def main():
     p.add_argument("--width", type=int, default=88, help="Terminal report width.")
     p.add_argument("--no-banner", action="store_true")
     a = p.parse_args()
+
+    # Env vars rather than parameters, so this also reaches the agent's own context.
+    if a.deep:
+        os.environ["FINGERPRINT_DEEP"] = "1"
+    if a.headed:
+        os.environ["FINGERPRINT_HEADED"] = "1"
 
     if not a.no_banner:
         print(render_banner())
