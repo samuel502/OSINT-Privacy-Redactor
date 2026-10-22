@@ -38,8 +38,12 @@ except ImportError:                     # optional second source, added separate
 
 RUNNER = Path(__file__).with_name("_holehe_runner.py")
 RUNNER_TIMEOUT = int(os.environ.get("HOLEHE_RUNNER_TIMEOUT", "300"))
-MAX_PASSES = int(os.environ.get("HOLEHE_MAX_PASSES", "2"))
+MAX_PASSES = int(os.environ.get("HOLEHE_MAX_PASSES", "1"))
 PASS_PAUSE_S = int(os.environ.get("HOLEHE_PASS_PAUSE", "8"))
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").lower() in {"1", "true", "yes"}
 
 
 def _run_runner(email: str) -> list:
@@ -107,13 +111,17 @@ def _gravatar(email: str):
         return None
 
 
-def footprint_probe(email: str, retry_blocked: bool = True, deep: bool = False) -> dict:
+def footprint_probe(email: str, retry_blocked: bool = True, deep: bool | None = None) -> dict:
     """Probe for accounts.
 
     retry_blocked: a sweep is ~5s, so a second pass to recover unresolved sites is cheap.
     deep:          also run the fingerprint.to second source (needs playwright; ~2-3 min).
+                   None falls back to the FINGERPRINT_DEEP env var, so --agent mode works too.
     """
     email = validate_email(email)
+    if deep is None:
+        deep = _env_flag("FINGERPRINT_DEEP")
+
     sources, hints = {}, {}
     confirmed, limited_domains, absent, errored = set(), set(), set(), set()
     holehe_ok, total_sites = False, 0
