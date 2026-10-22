@@ -11,14 +11,24 @@ from .breaches import breach_lookup
 from .erasure import draft_erasure_request
 from .footprint import footprint_probe
 from .playbooks import search_playbooks
+from .userscan import email_scan, username_scan
 
 CATEGORIES = ["account_service", "lookup_service", "aggregator", "browser_config"]
 
 DECLARATIONS = [
-    {"name": "footprint_probe",
+    {"name": "email_scan",
      "description": "Check which online services have an account registered to the user's email "
-                    "(holehe + Gravatar). Slow (up to ~2.5 minutes). Takes no arguments. Lists only "
-                    "confirmed accounts; absence is not proof."},
+                    "(user-scanner, ~240 sites). Takes no arguments. Lists confirmed accounts with "
+                    "a few profile details; reports how many sites errored or were skipped. "
+                    "Absence is not proof. May take a few minutes."},
+    {"name": "username_scan",
+     "description": "Search public profile pages for a USERNAME (user-scanner, thousands of sites). "
+                    "Use it on a handle found in email_scan details, or one the user provides. "
+                    "Hits are POSSIBLE matches only: the same handle can belong to someone else.",
+     "parameters": {"type": "object",
+                    "properties": {"username": {"type": "string",
+                                                "description": "A handle without the @, e.g. 'jdoe42'"}},
+                    "required": ["username"]}},
     {"name": "breach_lookup",
      "description": "Check which known data breaches include the user's email (XposedOrNot). "
                     "Takes no arguments."},
@@ -53,7 +63,16 @@ def dispatch(name: str, args: dict, ctx: dict) -> dict:
     """Run one tool. Never raises: failures come back as an error result."""
     args = args or {}
     try:
-        if name == "footprint_probe":
+        if name == "email_scan":
+            r = email_scan(ctx["email"])
+            if r["status"] == "unavailable":  # user-scanner missing: fall back to holehe + Gravatar
+                fb = footprint_probe(ctx["email"])
+                fb["note"] = "Fallback: user-scanner unavailable, used holehe + Gravatar. " + (fb.get("note") or "")
+                return fb
+            return r
+        if name == "username_scan":
+            return username_scan(str(args.get("username", "")))
+        if name == "footprint_probe":  # kept for the no-LLM pipeline; not declared to the model
             return footprint_probe(ctx["email"])
         if name == "breach_lookup":
             return breach_lookup(ctx["email"])
