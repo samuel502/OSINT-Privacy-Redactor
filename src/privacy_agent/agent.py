@@ -20,7 +20,10 @@ You choose which tools to call; you do not know the email address and never need
 
 Rules:
 - Base every claim on tool observations. Never invent accounts, steps, web links or email addresses. A link or contact address may appear in your answer ONLY if it is in a tool result.
-- Do not tell the user to delete or deactivate their accounts. That is outside this tool's purpose.
+- Do not tell the user to delete, close or deactivate their accounts. That is outside this tool's purpose.
+- Say a route is "verified" ONLY if its search_playbooks result has verified=true. Otherwise say "researched, not tested".
+- Services that appeared in a breach have no playbook. Do not say a removal form exists for them. You may offer a draft erasure email (draft_erasure_request) and say it is a draft the user sends themselves.
+- After each tool round you receive a FACTS note computed in code. Use its numbers exactly; never contradict it.
 - A tool status of "unavailable" or "error" means that check did NOT happen. Say so; never present it as "nothing found".
 - email_scan reports how many sites errored or were skipped: those were NOT checked. State the numbers once.
 - If a playbook has needs_captcha=true, say the user must solve the CAPTCHA and click the emailed confirmation link themselves.
@@ -31,6 +34,30 @@ Final answer: plain language, under 200 words, no tables, no code blocks. Three 
 2. What to do next: a numbered list of at most 5 steps. Each step uses only a route that came from search_playbooks or a draft you produced, and says whether it is verified.
 3. Could not check: one line with the counts of errors and skipped sites.
 Do NOT list every account; the app already shows them as cards."""
+
+
+def facts_note(cache: dict) -> str:
+    """Numbers computed in code from the tool results so far. Given to the model so it does not misquote."""
+    from .merge import merge_findings
+    obs, users = {}, []
+    for (name, _), res in cache.items():
+        if name == "username_scan":
+            users.append(res)
+        else:
+            obs[name] = res
+    m = merge_findings(email_scan=obs.get("email_scan"), username_scans=users or None, breach=obs.get("breach_lookup"))
+    s, parts = m["summary"], []
+    if "email accounts" in s["checks_ok"]:
+        parts.append(f"confirmed accounts: {s['confirmed']}")
+        d = (obs["email_scan"].get("data") or {})
+        parts.append(f"email-scan sites not checked: {d.get('errors', 0)} errored, {d.get('skipped', 0)} skipped")
+    if users and "username search" in s["checks_ok"]:
+        parts.append(f"possible username matches: {s['possible']}")
+    if "breaches" in s["checks_ok"]:
+        parts.append("breaches: " + (", ".join(m["breaches"]) or "none"))
+    if s["checks_failed"]:
+        parts.append("checks that did NOT run: " + ", ".join(s["checks_failed"]))
+    return ("FACTS from the tools so far (computed in code, quote exactly): " + "; ".join(parts) + ".") if parts else ""
 
 
 def run_agent(email: str, jurisdiction: str, backend, max_steps: int = 14,
@@ -73,6 +100,9 @@ def run_agent(email: str, jurisdiction: str, backend, max_steps: int = 14,
                 yield {"type": "observation", "step": step, "name": call.name, "result": obs}
                 results.append((call, obs))
             backend.add_tool_results(results)
+            facts = facts_note(cache)
+            if facts:
+                backend.add_user_note(facts)
         yield {"type": "final", "step": max_steps, "truncated": True,
                "text": f"Stopped after {max_steps} steps without a final answer. Raise max_steps or retry."}
     except LLMError as e:

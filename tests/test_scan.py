@@ -331,3 +331,19 @@ def test_markdown_optout_no_longer_cuts_steps():
     from privacy_agent.scan import render_optout
     text = "a" * 300 + "ENDMARK"
     assert "ENDMARK" in render_optout([{"category": "lookup_service", "name": "S", "steps_summary": text}])
+
+
+def test_unsupported_verified_claim_is_flagged_but_negations_are_not():
+    from privacy_agent.scan import unsupported_verified
+    none = [{"type": "observation", "result": {"data": {"verified": False}}}]
+    yes = [{"type": "observation", "result": {"data": {"verified": True}}}]
+    assert unsupported_verified("Use the GDPR form (verified on their site).", none)
+    assert not unsupported_verified("The route is researched, not verified.", none)
+    assert not unsupported_verified("Playbook link (verified = false), confirm yourself.", none)
+    assert not unsupported_verified("Use the form (verified on their site).", yes)
+
+
+def test_plain_scan_tells_the_user_the_summary_tab_needs_the_agent():
+    from privacy_agent.scan import ui_scan
+    rows = list(ui_scan("email", "a@example.com", "", True, dispatch_fn=fake_dispatch, entries=[], routes={}))
+    assert "agentic audit" in rows[-1][3]

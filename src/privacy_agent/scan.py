@@ -432,6 +432,8 @@ def render_optout_html(entries: list[dict]) -> str:
 
 # ---------------------------------------------------------------- UI glue (no Gradio import)
 
+AGENT_HINT = ("_This tab fills in only when you run the agentic audit (open the accordion above). "
+              "The plain scan does not write a summary._")
 UI_OUTPUTS = 5  # trace, report, opt-out checklist, erasure drafts, files
 
 
@@ -458,7 +460,7 @@ def ui_scan(mode, email, username, own, pivot=False, dispatch_fn=dispatch, entri
                 yield (t, html_notice("Scan running... please wait", "This can take a few minutes. Keep this page and the terminal open."), "", "", None)
             else:
                 b = ev["bundle"]
-                yield ("\n".join(trace), b["report_html"], render_optout_html(entries), "", write_files(b))
+                yield ("\n".join(trace), b["report_html"], render_optout_html(entries), AGENT_HINT, write_files(b))
     except ValueError as e:
         yield (f"### Cannot start the scan\n\n**{e}**", html_notice("Cannot start the scan", str(e)), "", "", None)
 
@@ -475,6 +477,17 @@ def ungrounded_links(text: str, events: list) -> list:
         if m.lower() not in seen and m not in out:
             out.append(m)
     return out
+
+
+_VERIFIED_RE = __import__("re").compile(r"(?<![\w-])(?<!not )(?<!un)verified\b(?!\s*(=|:)?\s*false)", __import__("re").I)
+
+
+def unsupported_verified(text: str, events: list) -> bool:
+    """True if the answer calls something 'verified' but no tool result says verified is true."""
+    if not _VERIFIED_RE.search(text or ""):
+        return False
+    return not any('"verified": true' in json.dumps(e.get("result"), default=str).lower()
+                   for e in events if e.get("type") == "observation")
 
 
 def merged_from_events(events: list, routes=None) -> dict:
@@ -527,6 +540,9 @@ def ui_agent(email, jurisdiction, backend, full_name=None, max_steps=14, dispatc
     if bad:
         note += ("> **Warning:** the agent wrote these links or addresses, but no tool returned them, so they may "
                  "be wrong. Do not rely on them without checking the site yourself: " + ", ".join(f"`{b}`" for b in bad) + "\n\n")
+    if final and unsupported_verified(final["text"], events):
+        note += ("> **Warning:** the agent calls a route \"verified\", but no tool result says any route was "
+                 "verified. Treat those routes as researched, not tested.\n\n")
     if final and (final.get("truncated") or final.get("forced")):
         note = ("_The agent hit its step limit, so this answer was cut short._\n\n")
     yield ("\n\n".join(trace), bundle["report_html"], render_optout_html(entries),

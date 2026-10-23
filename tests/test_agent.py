@@ -96,9 +96,10 @@ def test_groq_backend_roundtrips_tool_calls_and_truncates_observations():
                             dispatch_fn=lambda n, a, c: result("ok", {"big": "x" * 9000}, "fake")))
     assert events[-1]["text"] == "All done."
     second = client.calls[1]["messages"]
-    assert second[-2]["role"] == "assistant" and second[-2]["tool_calls"][0]["id"] == "c1"
-    assert second[-1]["role"] == "tool" and second[-1]["tool_call_id"] == "c1"
-    assert len(second[-1]["content"]) < 4100 and "truncated" in second[-1]["content"]
+    tool_msgs = [m for m in second if m["role"] == "tool"]
+    assert tool_msgs and tool_msgs[-1]["tool_call_id"] == "c1"
+    assert any(m["role"] == "assistant" and m.get("tool_calls") and m["tool_calls"][0]["id"] == "c1" for m in second)
+    assert len(tool_msgs[-1]["content"]) < 4100 and "truncated" in tool_msgs[-1]["content"]
     assert all(t["type"] == "function" and "parameters" in t["function"] for t in client.calls[0]["tools"])
     assert "me@example.com" not in str(client.calls[0]["messages"])
 
@@ -138,3 +139,24 @@ def test_forced_turn_that_still_calls_tools_ends_honestly():
     events = list(run_agent("me@example.com", "gdpr", backend, max_steps=2,
                             dispatch_fn=fake_dispatch_factory([])))
     assert events[-1]["type"] == "final" and events[-1]["truncated"] is True
+
+
+def test_facts_note_is_computed_in_code_and_fed_back():
+    from privacy_agent.agent import facts_note
+    esc = result("ok", {"hits": [{"site": "A", "category": "c", "url": "https://a.example", "label": "registered",
+                                  "source": "s"}], "hit_count": 1, "checked": 3, "absent": 2, "errors": 4,
+                         "skipped": 5}, "user-scanner")
+    br = result("ok", {"breaches": [{"name": "SampleBreach"}]}, "x")
+    cache = {("email_scan", "{}"): esc, ("breach_lookup", "{}"): br}
+    f = facts_note(cache)
+    assert "confirmed accounts: 1" in f and "4 errored, 5 skipped" in f and "SampleBreach" in f
+    assert facts_note({}) == ""
+
+
+def test_run_agent_gives_the_model_the_facts_after_tools_run():
+    backend = ScriptedBackend([ModelTurn(calls=[ToolCall("breach_lookup")]), ModelTurn(text="done")])
+
+    def disp(name, args, ctx):
+        return result("ok", {"breaches": [{"name": "SampleBreach"}]}, "x")
+    list(run_agent("me@example.com", "gdpr", backend, dispatch_fn=disp))
+    assert any("SampleBreach" in n and "FACTS" in n for n in backend.notes)

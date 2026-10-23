@@ -133,8 +133,8 @@ def test_breach_lookup_network_failure_is_unavailable(monkeypatch):
 # ---- playbooks ----
 
 def test_playbook_exact_and_alias_match():
-    assert search_playbooks("https://www.github.com/foo")["data"]["matches"][0]["domain"] == "github.com"
-    assert search_playbooks("twitter.com")["data"]["matches"][0]["domain"] == "x.com"
+    assert search_playbooks("https://www.haveibeenpwned.com/foo")["data"]["matches"][0]["domain"] == "haveibeenpwned.com"
+    assert search_playbooks("hibp")["data"]["matches"][0]["domain"] == "haveibeenpwned.com"
 
 
 def test_playbook_text_query_and_unknown():
@@ -145,7 +145,7 @@ def test_playbook_text_query_and_unknown():
 
 
 def test_playbook_flags_unverified():
-    r = search_playbooks("github.com")
+    r = search_playbooks("haveibeenpwned.com")
     assert r["data"]["matches"][0]["verified"] is False and "NOT been manually checked" in r["note"]
 
 
