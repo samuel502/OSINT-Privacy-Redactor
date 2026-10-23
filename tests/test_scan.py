@@ -299,3 +299,35 @@ def test_ui_agent_warns_about_invented_links():
                                ModelTurn(text="Email support@8fit.com to erase it.")])
     rows = list(ui_agent("a@example.com", "other", backend, dispatch_fn=_agent_dispatch, entries=[], routes={}))
     assert "Warning" in rows[-1][3] and "support@8fit.com" in rows[-1][3]
+
+
+def test_optout_cards_show_full_steps_and_never_truncate():
+    from privacy_agent.scan import render_optout_html
+    long = "Step " + "x" * 400 + " END-OF-STEPS"
+    out = render_optout_html([{"category": "lookup_service", "name": "Site", "steps_summary": long,
+                               "opt_out_url": "https://site.example/optout", "verified": False,
+                               "requires_email_confirmation": True, "needs_captcha": True}])
+    assert "END-OF-STEPS" in out and "researched, not tested" in out
+    assert "confirm by email" in out and "bot check: you click it" in out
+    assert 'href="https://site.example/optout"' in out
+
+
+def test_optout_card_for_email_route_has_copyable_draft_without_real_address():
+    from privacy_agent.scan import render_optout_html
+    out = render_optout_html([{"category": "lookup_service", "name": "Epieos", "steps_summary": "No form.",
+                               "opt_out_email": "contact@epieos.com", "verified": True, "last_verified": "2026-09-12"}])
+    assert "contact@epieos.com" in out and "Draft email" in out and "[YOUR EMAIL ADDRESS]" in out
+    assert "verified 2026-09-12" in out
+
+
+def test_optout_html_escapes_registry_text():
+    from privacy_agent.scan import render_optout_html
+    out = render_optout_html([{"category": "lookup_service", "name": "<b>x</b>", "steps_summary": "<script>1</script>",
+                               "opt_out_url": "javascript:alert(1)"}])
+    assert "<script>" not in out and "javascript:" not in out
+
+
+def test_markdown_optout_no_longer_cuts_steps():
+    from privacy_agent.scan import render_optout
+    text = "a" * 300 + "ENDMARK"
+    assert "ENDMARK" in render_optout([{"category": "lookup_service", "name": "S", "steps_summary": text}])

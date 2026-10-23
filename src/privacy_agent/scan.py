@@ -129,8 +129,8 @@ def run_scan(mode: str, email: str, username: str, own: bool, dispatch_fn=dispat
 
 # ---------------------------------------------------------------- rendering
 
-def _cell(s) -> str:
-    return str(s or "").replace("|", "/").replace("\n", " ")[:90]
+def _cell(s, n: int = 90) -> str:
+    return str(s or "").replace("|", "/").replace("\n", " ")[:n]
 
 
 def render_exposure(merged: dict, mode: str = "both") -> str:
@@ -366,10 +366,68 @@ def render_optout(entries: list[dict]) -> str:
         for e in group:
             status = "verified " + (e.get("last_verified") or "") if e.get("verified") else "researched, not tested"
             link = e.get("opt_out_url") or e.get("opt_out_email") or ""
-            out.append(f"| [{_cell(e['name'])}]({link}) | {status} | {_cell(e.get('steps_summary'))} |" if link
-                       else f"| {_cell(e['name'])} | {status} | {_cell(e.get('steps_summary'))} |")
+            out.append(f"| [{_cell(e['name'])}]({link}) | {status} | {_cell(e.get('steps_summary'), 500)} |" if link
+                       else f"| {_cell(e['name'])} | {status} | {_cell(e.get('steps_summary'), 500)} |")
         out.append("")
     return "\n".join(out)
+
+
+OPTOUT_CSS = CSS.replace("</style>", """
+.xp .chip.ok{border-color:#2e9e5b}.xp .chip.todo{border-color:#d9a400}
+.xp details{margin-top:8px;font-size:13px}.xp pre{white-space:pre-wrap;margin:6px 0 0;padding:8px;border:1px solid var(--b);border-radius:8px;background:var(--bg)}
+.xp .steps{margin:6px 0}
+</style>""")
+
+
+def written_request(site: str) -> str:
+    """Generic erasure email to paste. Placeholders only; nothing is sent and no address is filled in."""
+    from .tools.erasure import _LAW
+    subject, law = _LAW["gdpr"]
+    return (f"Subject: {subject}\n\nTo the privacy team at {site},\n\n{law}\n\n"
+            "The email address concerned is: [YOUR EMAIL ADDRESS]\n"
+            "Please confirm in writing once the data has been erased. If you need to verify my identity, "
+            "tell me the minimum you need.\n\nThank you,\n[YOUR NAME]")
+
+
+def _optout_card(e: dict) -> str:
+    verified = bool(e.get("verified"))
+    status = (f'<span class="chip ok">verified {_e(e.get("last_verified") or "", 12)}</span>' if verified
+              else '<span class="chip todo">researched, not tested</span>')
+    chips = []
+    if e.get("requires_email_confirmation"):
+        chips.append("confirm by email")
+    if e.get("needs_captcha"):
+        chips.append("bot check: you click it")
+    if e.get("opt_out_email"):
+        chips.append("written request")
+    chips_html = "".join(f'<span class="chip">{_e(c, 40)}</span>' for c in chips)
+    link = _link(e.get("opt_out_url") or "", "Open the removal page")
+    src = _link(e.get("source_url") or "", "Where this route came from")
+    mail = ""
+    if e.get("opt_out_email"):
+        mail = (f'<div class="foot">Send to: <b>{_e(e["opt_out_email"], 80)}</b></div>'
+                f'<details><summary>Draft email (copy and paste)</summary><pre>{_e(written_request(e["name"]), 1500)}</pre></details>')
+    return (f'<div class="card"><div class="nm">{_e(e["name"], 60)}</div>'
+            f'<div style="margin:6px 0">{status}{chips_html}</div>'
+            f'<div class="steps">{_e(e.get("steps_summary"), 600)}</div>'
+            f'<div class="foot">{link}{" &middot; " + src if src else ""}</div>{mail}</div>')
+
+
+def render_optout_html(entries: list[dict]) -> str:
+    sites = [e for e in entries if e.get("category") == "lookup_service"]
+    if not sites:
+        return html_notice("No OSINT-site routes are loaded.")
+    out = [OPTOUT_CSS, '<div class="xp"><h3>Opt out of OSINT lookup sites</h3>'
+           '<p class="sub">These sites can profile an email or username. Each route was researched from the '
+           'site\'s own page or a guide. Only entries marked <b>verified</b> have been tested, so confirm the steps '
+           'on the site. We do not know which of these sites actually list you: most hide that behind a bot check.</p>']
+    for tier in (1, 2, 3):
+        group = sorted((e for e in sites if _tier(e) == tier), key=lambda e: e["name"].lower())
+        if group:
+            out.append(f'<h3>{_e(TIER_NAMES[tier], 80)} ({len(group)})</h3><div class="grid">' +
+                       "".join(_optout_card(e) for e in group) + "</div>")
+    out.append("</div>")
+    return "".join(out)
 
 
 # ---------------------------------------------------------------- UI glue (no Gradio import)
@@ -400,7 +458,7 @@ def ui_scan(mode, email, username, own, pivot=False, dispatch_fn=dispatch, entri
                 yield (t, html_notice("Scan running... please wait", "This can take a few minutes. Keep this page and the terminal open."), "", "", None)
             else:
                 b = ev["bundle"]
-                yield ("\n".join(trace), b["report_html"], render_optout(entries), "", write_files(b))
+                yield ("\n".join(trace), b["report_html"], render_optout_html(entries), "", write_files(b))
     except ValueError as e:
         yield (f"### Cannot start the scan\n\n**{e}**", html_notice("Cannot start the scan", str(e)), "", "", None)
 
@@ -471,5 +529,5 @@ def ui_agent(email, jurisdiction, backend, full_name=None, max_steps=14, dispatc
                  "be wrong. Do not rely on them without checking the site yourself: " + ", ".join(f"`{b}`" for b in bad) + "\n\n")
     if final and (final.get("truncated") or final.get("forced")):
         note = ("_The agent hit its step limit, so this answer was cut short._\n\n")
-    yield ("\n\n".join(trace), bundle["report_html"], render_optout(entries),
+    yield ("\n\n".join(trace), bundle["report_html"], render_optout_html(entries),
            note + (final["text"] if final else ""), write_files(bundle))

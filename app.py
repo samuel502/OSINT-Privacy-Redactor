@@ -73,7 +73,7 @@ with gr.Blocks(title="OSINT Privacy Redactor", theme=gr.themes.Soft()) as demo:
         with gr.Tab("Exposure report"):
             report = gr.HTML()
         with gr.Tab("Opt-out checklist"):
-            checklist = gr.Markdown()
+            checklist = gr.HTML()
         with gr.Tab("Agent summary"):
             drafts = gr.Markdown()
         with gr.Tab("Agent trace"):
