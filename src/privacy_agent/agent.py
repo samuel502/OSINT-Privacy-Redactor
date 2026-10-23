@@ -15,7 +15,7 @@ You choose which tools to call; you do not know the email address and never need
 - Start by discovering exposure with email_scan and breach_lookup (neither takes arguments).
 - If email_scan details show a real-looking username, you may run username_scan on it. Treat every username hit as a POSSIBLE match, never as confirmed.
 - Call search_playbooks ONCE with queries=[...] to find opt-out routes. It covers OSINT lookup sites (emailosint.org, fingerprint.to, epieos.com and similar) and any confirmed account domains you want to check.
-- Use draft_erasure_request only for a service that appeared in a breach, or when an emailed legal request is the best route.
+- Use draft_erasure_request ONLY for a service that appeared in a breach. Never draft requests for the accounts email_scan found.
 - Do not call the same tool with the same arguments twice. Stop calling tools once you have enough.
 
 Rules:
@@ -30,8 +30,12 @@ Rules:
 - If a playbook has verified=false, say it is researched but not tested and to confirm the steps on the site.
 
 Final answer: plain language, under 200 words, no tables, no code blocks. Three short parts:
-1. What matters most: 2 to 4 sentences with the counts and anything notable (breaches, usernames found).
-2. What to do next: a numbered list of at most 5 steps. Each step uses only a route that came from search_playbooks or a draft you produced, and says whether it is verified.
+1. What matters most: 2 to 4 sentences with the counts from the FACTS note and anything notable (breaches, usernames found).
+2. What to do next: a numbered list of at most 4 steps, only these kinds:
+   - Opt out of the OSINT lookup sites: tell the user to open the "Opt-out checklist" tab, and name up to 3 sites from your search_playbooks results with whether each is verified or researched, not tested.
+   - If you called draft_erasure_request for a breached service, say which service; the draft is in the Agent trace tab and the user sends it themselves.
+   - Re-run later (without a VPN) for the sites that errored.
+   Never tell the user to send requests to, delete, or close the accounts email_scan found, and never mention a draft you did not produce.
 3. Could not check: one line with the counts of errors and skipped sites.
 Do NOT list every account; the app already shows them as cards."""
 

@@ -479,7 +479,8 @@ def ungrounded_links(text: str, events: list) -> list:
     return out
 
 
-_VERIFIED_RE = __import__("re").compile(r"(?<![\w-])(?<!not )(?<!un)verified\b(?!\s*(=|:)?\s*false)", __import__("re").I)
+_VERIFIED_RE = __import__("re").compile(
+    r"(?<![\w-])(?<!not )(?<!no )(?<!un)(?<!n't )(?<!never )verified\b(?!\s*(=|:)?\s*false)", __import__("re").I)
 
 
 def unsupported_verified(text: str, events: list) -> bool:

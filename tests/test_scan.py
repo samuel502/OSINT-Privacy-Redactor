@@ -281,7 +281,7 @@ def test_ui_agent_bad_email_and_backend_error_are_shown_not_raised():
 def test_prompt_forbids_invented_links_and_account_deletion():
     from privacy_agent.agent import SYSTEM_PROMPT
     assert "ONLY if it is in a tool result" in SYSTEM_PROMPT
-    assert "Do not tell the user to delete" in SYSTEM_PROMPT and "under 200 words" in SYSTEM_PROMPT
+    assert "Do not tell the user to delete" in SYSTEM_PROMPT and "Never draft requests for the accounts" in SYSTEM_PROMPT and "under 200 words" in SYSTEM_PROMPT
 
 
 def test_ungrounded_links_are_flagged_and_grounded_ones_are_not():
@@ -341,6 +341,8 @@ def test_unsupported_verified_claim_is_flagged_but_negations_are_not():
     assert not unsupported_verified("The route is researched, not verified.", none)
     assert not unsupported_verified("Playbook link (verified = false), confirm yourself.", none)
     assert not unsupported_verified("Use the form (verified on their site).", yes)
+    assert not unsupported_verified("They have no verified opt-out playbooks.", none)
+    assert not unsupported_verified("Routes aren't verified yet.", none)
 
 
 def test_plain_scan_tells_the_user_the_summary_tab_needs_the_agent():
