@@ -20,6 +20,10 @@ from urllib.parse import urlsplit
 # Sites that changed domain or have several. Extend as the registry grows.
 DOMAIN_ALIASES = {"twitter.com": "x.com", "mobile.twitter.com": "x.com", "office365.com": "office.com"}
 
+# Links that point at a store or host, not at the service itself. Fall back to the site name.
+STORE_HOSTS = {"play.google.com", "apps.apple.com", "itunes.apple.com", "chrome.google.com",
+               "chromewebstore.google.com", "github.com", "web.archive.org"}
+
 CHECK_NAMES = {"email_scan": "email accounts", "username_scans": "username search", "breach": "breaches"}
 
 
@@ -32,10 +36,25 @@ def domain_key(site: str, url: str = "") -> str:
         except ValueError:
             host = ""
     host = re.sub(r"^www\.", "", host)
+    if host in STORE_HOSTS and site:
+        host = ""
     if host:
         return DOMAIN_ALIASES.get(host, host)
     name = re.sub(r"[^a-z0-9]", "", (site or "").lower())
     return DOMAIN_ALIASES.get(name, f"name:{name}")
+
+
+def routes_by_domain(entries: list) -> dict:
+    """Index registry/playbook entries by the same key merge_findings uses (domain + aliases)."""
+    out: dict = {}
+    for e in entries:
+        for name in [e.get("domain", ""), *e.get("aliases", [])]:
+            if "." in name:
+                out.setdefault(domain_key("", name), e)
+        for name in [e.get("name", ""), *e.get("aliases", [])]:  # sites reported without a usable link
+            if name and "." not in name:
+                out.setdefault(domain_key(name, ""), e)
+    return out
 
 
 def _failed(res: dict, label: str, failed: list, notes: list) -> bool:

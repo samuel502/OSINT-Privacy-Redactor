@@ -111,3 +111,26 @@ def test_duplicate_hits_inside_one_tool_do_not_double_count():
     r = merge_findings(email_scan=_email(("Etsy", "https://www.etsy.com", None),
                                          ("Etsy", "https://etsy.com", None)))
     assert len(r["accounts"]) == 1
+
+
+def test_routes_by_domain_uses_aliases():
+    from privacy_agent.merge import routes_by_domain
+    r = routes_by_domain([{"domain": "office.com", "aliases": ["microsoft.com", "live.com"]},
+                          {"domain": "x.com", "aliases": ["twitter.com"]}])
+    assert r["office.com"]["domain"] == "office.com"
+    assert r["x.com"]["domain"] == "x.com"
+    assert "twitter.com" not in r  # aliases are normalised to the main key
+
+
+def test_store_links_fall_back_to_the_site_name():
+    assert domain_key("Babbel", "https://play.google.com/store/apps/details?id=com.babbel") == "name:babbel"
+    assert domain_key("Etsy", "https://www.etsy.com") == "etsy.com"
+
+
+def test_route_found_for_a_site_reported_with_a_store_link():
+    from privacy_agent.merge import routes_by_domain
+    routes = routes_by_domain([{"domain": "babbel.com", "name": "Babbel", "aliases": [], "verified": False,
+                                "opt_out_url": "https://help.example/babbel"}])
+    r = merge_findings(email_scan=_email(("Babbel", "https://play.google.com/store/apps/details?id=x", None)),
+                       routes=routes)
+    assert r["accounts"][0]["removal"]["status"] == "unverified"
