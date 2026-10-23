@@ -3,3 +3,6 @@ __pycache__/
 .env
 *.csv
 .venv/
+
+# Local scan output. Can contain real personal data.
+reports/
