@@ -69,9 +69,11 @@ def _failed(res: dict, label: str, failed: list, notes: list) -> bool:
     return False
 
 
-def _add(accounts: dict, key: str, site: str, url: str, evidence: str, source: str, details):
+def _add(accounts: dict, key: str, site: str, url: str, evidence: str, source: str, details,
+         category: str = "", avatar: str = ""):
     a = accounts.setdefault(key, {"domain": key, "site": site, "url": url, "evidence": [],
-                                  "sources": [], "details": {}})
+                                  "sources": [], "details": {},
+                                  "category": "", "avatar": ""})
     if evidence not in a["evidence"]:
         a["evidence"].append(evidence)
     if source and source not in a["sources"]:
@@ -80,6 +82,10 @@ def _add(accounts: dict, key: str, site: str, url: str, evidence: str, source: s
         a["details"].update(details)
     if url and not a["url"]:
         a["url"] = url
+    if category and not a["category"]:
+        a["category"] = category
+    if avatar and not a["avatar"]:
+        a["avatar"] = avatar
 
 
 def _removal(key: str, routes: dict | None) -> dict:
@@ -102,7 +108,8 @@ def merge_findings(email_scan: dict | None = None, username_scans: list | None =
         data = email_scan.get("data") or {}
         for h in data.get("hits", []):
             _add(accounts, domain_key(h.get("site", ""), h.get("url", "")), h.get("site", ""),
-                 h.get("url", ""), "email_registered", h.get("source", "email_scan"), h.get("details"))
+                 h.get("url", ""), "email_registered", h.get("source", "email_scan"), h.get("details"),
+                 h.get("category", ""), h.get("avatar", ""))
         for d in data.get("confirmed_accounts", []):  # holehe fallback shape
             _add(accounts, domain_key(d, d), d, "", "email_registered", email_scan.get("source", ""), None)
         if data.get("errors"):
@@ -120,7 +127,8 @@ def merge_findings(email_scan: dict | None = None, username_scans: list | None =
         data = us.get("data") or {}
         for h in data.get("hits", []):
             _add(accounts, domain_key(h.get("site", ""), h.get("url", "")), h.get("site", ""),
-                 h.get("url", ""), "username_match", h.get("source", "username_scan"), h.get("details"))
+                 h.get("url", ""), "username_match", h.get("source", "username_scan"), h.get("details"),
+                 h.get("category", ""), h.get("avatar", ""))
         if data.get("errors"):
             notes.append(f"{data['errors']} sites errored or were blocked during a username search and were not checked.")
 

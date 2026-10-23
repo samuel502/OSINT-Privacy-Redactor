@@ -109,3 +109,40 @@ def test_ui_scan_error_row_has_five_values():
     from privacy_agent.scan import UI_OUTPUTS, ui_scan
     rows = list(ui_scan("email", "a@example.com", "", False, dispatch_fn=fake_dispatch, entries=[], routes={}))
     assert len(rows) == 1 and len(rows[0]) == UI_OUTPUTS and rows[0][0].startswith("### Cannot start")
+
+
+def _merged_with(hit):
+    from privacy_agent.merge import merge_findings
+    d = {"hits": [hit], "hit_count": 1, "checked": 1, "absent": 0, "errors": 0, "skipped": 0}
+    return merge_findings(email_scan=result("ok", d, "user-scanner"))
+
+
+def test_cards_show_details_category_avatar_and_link():
+    from privacy_agent.scan import render_cards_html
+    h = {"site": "Etsy", "category": "Shopping", "url": "https://www.etsy.com", "label": "registered",
+         "source": "user-scanner", "details": {"name": "Sample Person", "joined": "2021-02-06"},
+         "avatar": "https://img.example.com/a.jpg"}
+    out = render_cards_html(_merged_with(h))
+    assert "Shopping" in out and "Sample Person" in out and "Joined" in out
+    assert 'src="https://img.example.com/a.jpg"' in out and 'referrerpolicy="no-referrer"' in out
+    assert 'href="https://www.etsy.com"' in out and "not your profile" in out
+
+
+def test_cards_escape_third_party_text_and_reject_unsafe_links():
+    from privacy_agent.scan import render_cards_html
+    h = {"site": "<script>alert(1)</script>", "category": "x", "url": "javascript:alert(1)",
+         "label": "registered", "source": "user-scanner",
+         "details": {"name": "<img src=x onerror=alert(1)>"}, "avatar": "http://insecure.example/a.jpg"}
+    out = render_cards_html(_merged_with(h))
+    assert "<script>" not in out and "<img src=x" not in out
+    assert "javascript:" not in out and "insecure.example" not in out
+
+
+def test_user_scanner_avatar_is_https_only():
+    from privacy_agent.tools.userscan import parse_rows
+    rows = [{"status": "Registered", "site_name": "A", "category": "c", "url": "https://a.example", "extra": {},
+             "media": {"avatar": "https://cdn.example/p.png"}},
+            {"status": "Registered", "site_name": "B", "category": "c", "url": "https://b.example", "extra": {},
+             "media": {"avatar": "http://cdn.example/p.png"}}]
+    hits = parse_rows(rows, "email")["hits"]
+    assert hits[0]["avatar"].startswith("https://") and "avatar" not in hits[1]

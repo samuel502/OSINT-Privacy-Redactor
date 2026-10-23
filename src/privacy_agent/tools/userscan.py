@@ -33,7 +33,8 @@ USERNAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._\-]{0,63}$")
 HIT = {"registered", "found", "taken"}
 ABSENT = {"not registered", "not found", "available"}
 # Fields safe to show the model. Anything else (bio, about, description...) is dropped.
-KEEP_EXTRA = ("name", "username", "joined", "created", "followers", "following", "location")
+KEEP_EXTRA = ("name", "username", "joined", "created", "followers", "following", "location",
+              "last_profile_update", "last_active", "last_seen")
 MAX_VALUE = 80
 MAX_HITS = 60
 
@@ -53,6 +54,12 @@ def _clean_extra(extra: dict | None) -> dict:
     return out
 
 
+def _avatar(media) -> str:
+    """Profile picture link if the site gave one. https only, capped. Never fetched by us."""
+    url = (media or {}).get("avatar") if isinstance(media, dict) else None
+    return url[:300] if isinstance(url, str) and url.startswith("https://") else ""
+
+
 def parse_rows(rows: list[dict], kind: str) -> dict:
     """Turn user-scanner JSON rows into the compact summary the agent sees."""
     hits, counts = [], {"checked": 0, "absent": 0, "errors": 0, "skipped": 0}
@@ -70,6 +77,9 @@ def parse_rows(rows: list[dict], kind: str) -> dict:
             details = _clean_extra(r.get("extra"))
             if details:
                 hit["details"] = details
+            avatar = _avatar(r.get("media"))
+            if avatar:
+                hit["avatar"] = avatar
             hits.append(hit)
         elif status in ABSENT:
             counts["checked"] += 1

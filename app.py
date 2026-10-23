@@ -31,6 +31,11 @@ KEY_HELP = """1. Get a free key at console.groq.com/keys. It is shown **once**, 
 Never paste your key into chat, a command line or a screenshot."""
 
 
+def _plain_html(text: str) -> str:
+    import html
+    return f'<div style="white-space:pre-wrap">{html.escape(text)}</div>'
+
+
 def show_fields(mode):
     return gr.update(visible=mode in ("email", "both")), gr.update(visible=mode in ("username", "both"))
 
@@ -49,7 +54,7 @@ def audit_agent(email, full_name, jurisdiction, provider, api_key):
         yield ("\n\n".join(trace),) + BLANK
         last = ev
     if last and last["type"] == "final":
-        yield ("\n\n".join(trace), last["text"], "", "", None)
+        yield ("\n\n".join(trace), _plain_html(last["text"]), "", "", None)
 
 
 with gr.Blocks(title="OSINT Privacy Redactor", theme=gr.themes.Soft()) as demo:
@@ -78,7 +83,7 @@ with gr.Blocks(title="OSINT Privacy Redactor", theme=gr.themes.Soft()) as demo:
         run_agent_btn = gr.Button("Run agentic audit")
     with gr.Tabs():
         with gr.Tab("Exposure report"):
-            report = gr.Markdown()
+            report = gr.HTML()
         with gr.Tab("Opt-out checklist"):
             checklist = gr.Markdown()
         with gr.Tab("Erasure drafts"):
