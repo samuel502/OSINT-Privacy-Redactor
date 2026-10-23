@@ -10,7 +10,7 @@ import gradio as gr  # noqa: E402
 
 from privacy_agent.agent import format_event, run_agent  # noqa: E402
 from privacy_agent.banner import banner_html  # noqa: E402
-from privacy_agent.env import load_env  # noqa: E402
+from privacy_agent.env import key_status, load_env  # noqa: E402
 from privacy_agent.llm import LLMError, make_backend  # noqa: E402
 from privacy_agent.scan import load_entries, load_routes, render_optout, run_scan  # noqa: E402
 from privacy_agent.schema import validate_email  # noqa: E402
@@ -84,10 +84,11 @@ with gr.Blocks(title="OSINT Privacy Redactor", theme=gr.themes.Soft()) as demo:
     own = gr.Checkbox(label="This is my own email address / username", value=False)
     run_plain = gr.Button("Scan (no LLM key needed)", variant="primary")
     with gr.Accordion("Agentic audit (needs a free Groq or Gemini key)", open=False):
+        key_line = gr.Markdown(key_status("groq"))
         with gr.Row():
             provider = gr.Dropdown([("Groq", "groq"), ("Gemini", "gemini")], value="groq",
                                    label="Provider")
-            api_key = gr.Textbox(label="API key (masked; or leave blank if set in .env)",
+            api_key = gr.Textbox(label="Optional: paste a key here instead (used for this session only, never saved)",
                                  type="password")
         run_agent_btn = gr.Button("Run agentic audit")
     with gr.Tabs():
@@ -102,6 +103,8 @@ with gr.Blocks(title="OSINT Privacy Redactor", theme=gr.themes.Soft()) as demo:
         with gr.Tab("Download"):
             files = gr.Files(label="report.md / report.json")
     outs = [trace, report, checklist, drafts, files]
+    provider.change(key_status, [provider, api_key], key_line)
+    api_key.change(key_status, [provider, api_key], key_line)
     mode.change(show_fields, mode, [email, username])
     run_plain.click(scan, [mode, email, username, own], outs)
     run_agent_btn.click(audit_agent, [email, full_name, jurisdiction, provider, api_key], outs)

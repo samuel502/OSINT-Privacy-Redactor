@@ -28,3 +28,27 @@ def load_env(path: Path | None = None) -> int:
             os.environ[k] = v
             n += 1
     return n
+
+
+KEY_VARS = {"groq": ("GROQ_API_KEY",), "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY")}
+
+
+def mask_key(key: str) -> str:
+    """Show only the start and last 4 characters. Short keys are fully hidden."""
+    key = (key or "").strip()
+    if len(key) < 12:
+        return "••••••••"
+    return f"{key[:4]}••••••••{key[-4:]}"
+
+
+def key_status(provider: str, typed: str | None = None, environ=None) -> str:
+    """One plain line for the UI: is a key in use, from where, masked. Never returns the full key."""
+    environ = os.environ if environ is None else environ
+    name = "Groq" if provider == "groq" else "Gemini"
+    typed = (typed or "").strip()
+    if typed:
+        return f"🔑 **{name} key in use** (typed in this page, this session only): `{mask_key(typed)}`"
+    for var in KEY_VARS.get(provider, ()):
+        if environ.get(var):
+            return f"🔑 **{name} key in use** (from `.env` / environment, `{var}`): `{mask_key(environ[var])}`"
+    return f"⚠️ **No {name} key found.** Add it to `.env` and restart, or paste it below."
