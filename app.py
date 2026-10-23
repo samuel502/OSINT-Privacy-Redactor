@@ -12,8 +12,7 @@ from privacy_agent.agent import format_event, run_agent  # noqa: E402
 from privacy_agent.banner import banner_html  # noqa: E402
 from privacy_agent.env import load_env  # noqa: E402
 from privacy_agent.llm import LLMError, make_backend  # noqa: E402
-from privacy_agent.pipeline import run_pipeline  # noqa: E402
-from privacy_agent.report import render_checklist, render_drafts  # noqa: E402
+from privacy_agent.scan import load_entries, load_routes, render_optout, run_scan  # noqa: E402
 from privacy_agent.schema import validate_email  # noqa: E402
 
 load_env()
@@ -23,9 +22,25 @@ JURISDICTIONS = [("EU / EEA (GDPR)", "gdpr"), ("UK (UK GDPR)", "uk_gdpr"),
 BLANK = ("", "", "", "", None)
 
 
+def scan(mode, email, username, own):
+    """Deterministic scan (no LLM): lookups, merged report, OSINT-site opt-out checklist."""
+    blank = ("", "", "", "", None)
+    trace = []
+    try:
+        for ev in run_scan(mode, email, username, own, routes=load_routes()):
+            if ev["type"] == "step":
+                trace.append("- " + ev["text"])
+                yield ("\n".join(trace),) + blank
+            else:
+                b = ev["bundle"]
+                yield ("\n".join(trace), b["report_md"], render_optout(load_entries()), "", _write(b))
+    except ValueError as e:
+        yield (f"**Error:** {e}",) + blank
+
+
 def _write(bundle):
     d = tempfile.mkdtemp(prefix="redactor-")
-    md, js = os.path.join(d, "privacy-report.md"), os.path.join(d, "privacy-report.json")
+    md, js = os.path.join(d, "exposure-report.md"), os.path.join(d, "exposure-report.json")
     with open(md, "w", encoding="utf-8") as f:
         f.write(bundle["report_md"])
     with open(js, "w", encoding="utf-8") as f:
@@ -33,24 +48,8 @@ def _write(bundle):
     return [md, js]
 
 
-def _render(bundle):
-    return (bundle["report_md"], render_checklist(bundle["checklist"]),
-            render_drafts(bundle["drafts"]), _write(bundle))
-
-
-def audit_no_llm(email, full_name, jurisdiction):
-    try:
-        email = validate_email(email)
-    except ValueError as e:
-        yield (f"**Error:** {e}",) + BLANK
-        return
-    trace = []
-    for ev in run_pipeline(email, jurisdiction, (full_name or "").strip() or None):
-        if ev["type"] == "step":
-            trace.append("- " + ev["text"])
-            yield ("\n".join(trace),) + BLANK
-        else:
-            yield ("\n".join(trace),) + _render(ev["bundle"])
+def show_fields(mode):
+    return gr.update(visible=mode in ("email", "both")), gr.update(visible=mode in ("username", "both"))
 
 
 def audit_agent(email, full_name, jurisdiction, provider, api_key):
@@ -72,13 +71,18 @@ def audit_agent(email, full_name, jurisdiction, provider, api_key):
 
 with gr.Blocks(title="OSINT Privacy Redactor", theme=gr.themes.Soft()) as demo:
     gr.HTML(banner_html())
-    gr.Markdown("Audit **your own** email: what is tied to it, and how to remove it. "
-                "Probing runs locally; the address is never sent to the LLM, only tool results are.")
+    gr.Markdown("Check **your own** email or username: which accounts and breaches show up, "
+                "and how to opt out of OSINT lookup sites. Lookups run from this machine; "
+                "your email is never sent to an LLM.")
+    mode = gr.Radio([("Email", "email"), ("Username", "username"), ("Both", "both")],
+                    value="email", label="What to check")
     with gr.Row():
         email = gr.Textbox(label="Your email address", scale=3)
-        full_name = gr.Textbox(label="Full name (optional, for erasure drafts)", scale=2)
-        jurisdiction = gr.Dropdown(JURISDICTIONS, value="gdpr", label="Your legal jurisdiction")
-    run_plain = gr.Button("Audit (no LLM key needed)", variant="primary")
+        username = gr.Textbox(label="Your username", scale=3, visible=False)
+        full_name = gr.Textbox(label="Full name (optional, agentic mode only)", scale=2)
+        jurisdiction = gr.Dropdown(JURISDICTIONS, value="gdpr", label="Jurisdiction (agentic mode)")
+    own = gr.Checkbox(label="This is my own email address / username", value=False)
+    run_plain = gr.Button("Scan (no LLM key needed)", variant="primary")
     with gr.Accordion("Agentic audit (needs a free Groq or Gemini key)", open=False):
         with gr.Row():
             provider = gr.Dropdown([("Groq", "groq"), ("Gemini", "gemini")], value="groq",
@@ -87,9 +91,9 @@ with gr.Blocks(title="OSINT Privacy Redactor", theme=gr.themes.Soft()) as demo:
                                  type="password")
         run_agent_btn = gr.Button("Run agentic audit")
     with gr.Tabs():
-        with gr.Tab("Report"):
+        with gr.Tab("Exposure report"):
             report = gr.Markdown()
-        with gr.Tab("Checklist"):
+        with gr.Tab("Opt-out checklist"):
             checklist = gr.Markdown()
         with gr.Tab("Erasure drafts"):
             drafts = gr.Markdown()
@@ -98,7 +102,8 @@ with gr.Blocks(title="OSINT Privacy Redactor", theme=gr.themes.Soft()) as demo:
         with gr.Tab("Download"):
             files = gr.Files(label="report.md / report.json")
     outs = [trace, report, checklist, drafts, files]
-    run_plain.click(audit_no_llm, [email, full_name, jurisdiction], outs)
+    mode.change(show_fields, mode, [email, username])
+    run_plain.click(scan, [mode, email, username, own], outs)
     run_agent_btn.click(audit_agent, [email, full_name, jurisdiction, provider, api_key], outs)
 
 if __name__ == "__main__":
