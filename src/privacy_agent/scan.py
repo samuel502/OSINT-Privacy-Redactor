@@ -403,3 +403,73 @@ def ui_scan(mode, email, username, own, pivot=False, dispatch_fn=dispatch, entri
                 yield ("\n".join(trace), b["report_html"], render_optout(entries), "", write_files(b))
     except ValueError as e:
         yield (f"### Cannot start the scan\n\n**{e}**", html_notice("Cannot start the scan", str(e)), "", "", None)
+
+
+_URL_RE = __import__("re").compile(r"https?://[^\s)>\]\"'`]+|[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+
+
+def ungrounded_links(text: str, events: list) -> list:
+    """Links or email addresses in the agent's answer that no tool result contains (likely invented)."""
+    seen = json.dumps([e.get("result") for e in events if e.get("type") == "observation"], default=str).lower()
+    out = []
+    for m in _URL_RE.findall(text or ""):
+        m = m.rstrip(".,;:*")
+        if m.lower() not in seen and m not in out:
+            out.append(m)
+    return out
+
+
+def merged_from_events(events: list, routes=None) -> dict:
+    """Build the same merged report from the tool results an agent run produced."""
+    obs = {}
+    users = []
+    for ev in events:
+        if ev.get("type") != "observation":
+            continue
+        if ev["name"] == "username_scan":
+            users.append(ev["result"])
+        else:
+            obs[ev["name"]] = ev["result"]
+    email_res = obs.get("email_scan") or obs.get("footprint_probe")
+    return merge_findings(email_scan=email_res, username_scans=users or None, breach=obs.get("breach_lookup"),
+                          routes=routes if routes is not None else {}, profiles=obs.get("public_profiles"))
+
+
+def ui_agent(email, jurisdiction, backend, full_name=None, max_steps=14, dispatch_fn=dispatch,
+             entries=None, routes=None):
+    """Agentic run for the page. Yields 5-tuples: (trace, report_html, checklist, agent_summary_md, files).
+
+    The report is built from the agent's own tool results (so it is grounded); the agent's written
+    answer goes in its own tab as Markdown.
+    """
+    from .agent import format_event, run_agent
+    entries = load_entries() if entries is None else entries
+    routes = load_routes() if routes is None else routes
+    trace, events, final = [], [], None
+    try:
+        for ev in run_agent(validate_email(email), jurisdiction, backend, max_steps=max_steps,
+                            dispatch_fn=dispatch_fn, full_name=(full_name or None)):
+            events.append(ev)
+            trace.append(format_event(ev))
+            if ev["type"] == "final":
+                final = ev
+            yield ("\n\n".join(trace), html_notice("Agent running... please wait",
+                   "The model is choosing tools. Keep this page and the terminal open."), "", "", None)
+    except ValueError as e:
+        yield (f"**Error:** {e}", html_notice("Cannot start", str(e)), "", "", None)
+        return
+    merged = merged_from_events(events, routes)
+    bundle = {"mode": "agent", "merged": merged, "events": events,
+              "report_md": render_exposure(merged), "report_html": render_cards_html(merged)}
+    if events and events[-1]["type"] == "error":
+        yield ("\n\n".join(trace), html_notice("The agent run failed", events[-1]["text"]), "", "", None)
+        return
+    note = ""
+    bad = ungrounded_links(final["text"], events) if final else []
+    if bad:
+        note += ("> **Warning:** the agent wrote these links or addresses, but no tool returned them, so they may "
+                 "be wrong. Do not rely on them without checking the site yourself: " + ", ".join(f"`{b}`" for b in bad) + "\n\n")
+    if final and (final.get("truncated") or final.get("forced")):
+        note = ("_The agent hit its step limit, so this answer was cut short._\n\n")
+    yield ("\n\n".join(trace), bundle["report_html"], render_optout(entries),
+           note + (final["text"] if final else ""), write_files(bundle))

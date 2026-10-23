@@ -12,8 +12,7 @@ from privacy_agent.agent import format_event, run_agent  # noqa: E402
 from privacy_agent.banner import banner_html  # noqa: E402
 from privacy_agent.env import key_status, load_env  # noqa: E402
 from privacy_agent.llm import LLMError, make_backend  # noqa: E402
-from privacy_agent.scan import ui_scan  # noqa: E402
-from privacy_agent.schema import validate_email  # noqa: E402
+from privacy_agent.scan import ui_agent, ui_scan  # noqa: E402
 
 load_env()
 
@@ -31,30 +30,17 @@ KEY_HELP = """1. Get a free key at console.groq.com/keys. It is shown **once**, 
 Never paste your key into chat, a command line or a screenshot."""
 
 
-def _plain_html(text: str) -> str:
-    import html
-    return f'<div style="white-space:pre-wrap">{html.escape(text)}</div>'
-
-
 def show_fields(mode):
     return gr.update(visible=mode in ("email", "both")), gr.update(visible=mode in ("username", "both"))
 
 
 def audit_agent(email, full_name, jurisdiction, provider, api_key):
     try:
-        email = validate_email(email)
         backend = make_backend(provider, api_key=(api_key or "").strip() or None)
     except (ValueError, LLMError) as e:
         yield (f"**Error:** {e}",) + BLANK
         return
-    trace, last = [], None
-    for ev in run_agent(email, jurisdiction, backend, max_steps=14,
-                        full_name=(full_name or "").strip() or None):
-        trace.append(format_event(ev))
-        yield ("\n\n".join(trace),) + BLANK
-        last = ev
-    if last and last["type"] == "final":
-        yield ("\n\n".join(trace), _plain_html(last["text"]), "", "", None)
+    yield from ui_agent(email, jurisdiction, backend, full_name=(full_name or "").strip() or None)
 
 
 with gr.Blocks(title="OSINT Privacy Redactor", theme=gr.themes.Soft()) as demo:
@@ -88,7 +74,7 @@ with gr.Blocks(title="OSINT Privacy Redactor", theme=gr.themes.Soft()) as demo:
             report = gr.HTML()
         with gr.Tab("Opt-out checklist"):
             checklist = gr.Markdown()
-        with gr.Tab("Erasure drafts"):
+        with gr.Tab("Agent summary"):
             drafts = gr.Markdown()
         with gr.Tab("Agent trace"):
             trace = gr.Markdown()

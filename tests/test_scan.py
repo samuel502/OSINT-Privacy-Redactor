@@ -235,3 +235,67 @@ def test_pivot_prefers_public_profile_handles():
     from privacy_agent.scan import pivot_usernames
     prof = result("ok", {"profiles": [{"details": {"username": "owner_chosen"}}]}, "x")
     assert pivot_usernames(_email_with_usernames("other"), profiles_res=prof)[0] == "owner_chosen"
+
+
+def _agent_dispatch(name, args, ctx):
+    if name == "email_scan":
+        return fake_dispatch("email_scan", args, ctx)
+    if name == "breach_lookup":
+        return fake_dispatch("breach_lookup", args, ctx)
+    return result("ok", {"matches": []}, "fake")
+
+
+def test_ui_agent_builds_cards_from_tool_results_and_shows_summary_as_markdown_tab():
+    from privacy_agent.llm import ModelTurn, ScriptedBackend, ToolCall
+    from privacy_agent.scan import UI_OUTPUTS, ui_agent
+    backend = ScriptedBackend([ModelTurn(calls=[ToolCall("email_scan"), ToolCall("breach_lookup")]),
+                               ModelTurn(text="**What matters most:** one account and one breach.")])
+    rows = list(ui_agent("a@example.com", "other", backend, dispatch_fn=_agent_dispatch, entries=[], routes={}))
+    assert all(len(r) == UI_OUTPUTS for r in rows)
+    trace, report, checklist, summary, files = rows[-1]
+    assert "Etsy" in report and "SampleBreach" in report          # cards come from the tool results
+    assert summary.startswith("**What matters most:**") and "<" not in summary
+    assert isinstance(files, list) and all(r[4] is None for r in rows[:-1])
+    assert "a@example.com" not in backend.user and "a@example.com" not in backend.system
+
+
+def test_ui_agent_notes_when_the_step_limit_cut_the_answer_short():
+    from privacy_agent.llm import ModelTurn, ScriptedBackend, ToolCall
+    from privacy_agent.scan import ui_agent
+    backend = ScriptedBackend([ModelTurn(calls=[ToolCall("breach_lookup")]), ModelTurn(text="partial answer")])
+    rows = list(ui_agent("a@example.com", "other", backend, max_steps=2, dispatch_fn=_agent_dispatch,
+                         entries=[], routes={}))
+    assert "step limit" in rows[-1][3]
+
+
+def test_ui_agent_bad_email_and_backend_error_are_shown_not_raised():
+    from privacy_agent.llm import ModelTurn, ScriptedBackend
+    from privacy_agent.scan import ui_agent
+    rows = list(ui_agent("nope", "other", ScriptedBackend([]), dispatch_fn=_agent_dispatch, entries=[], routes={}))
+    assert rows[-1][0].startswith("**Error:**")
+    rows = list(ui_agent("a@example.com", "other", ScriptedBackend([]), dispatch_fn=_agent_dispatch,
+                         entries=[], routes={}))
+    assert "failed" in rows[-1][1].lower()
+
+
+def test_prompt_forbids_invented_links_and_account_deletion():
+    from privacy_agent.agent import SYSTEM_PROMPT
+    assert "ONLY if it is in a tool result" in SYSTEM_PROMPT
+    assert "Do not tell the user to delete" in SYSTEM_PROMPT and "under 200 words" in SYSTEM_PROMPT
+
+
+def test_ungrounded_links_are_flagged_and_grounded_ones_are_not():
+    from privacy_agent.scan import ungrounded_links
+    events = [{"type": "observation", "name": "search_playbooks",
+               "result": {"data": {"x": "https://x.com/settings/deactivate"}}}]
+    text = "Use https://x.com/settings/deactivate. Or write to support@8fit.com, see https://www.etsy.com/delete."
+    assert ungrounded_links(text, events) == ["support@8fit.com", "https://www.etsy.com/delete"]
+
+
+def test_ui_agent_warns_about_invented_links():
+    from privacy_agent.llm import ModelTurn, ScriptedBackend, ToolCall
+    from privacy_agent.scan import ui_agent
+    backend = ScriptedBackend([ModelTurn(calls=[ToolCall("breach_lookup")]),
+                               ModelTurn(text="Email support@8fit.com to erase it.")])
+    rows = list(ui_agent("a@example.com", "other", backend, dispatch_fn=_agent_dispatch, entries=[], routes={}))
+    assert "Warning" in rows[-1][3] and "support@8fit.com" in rows[-1][3]
