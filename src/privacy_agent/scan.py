@@ -11,6 +11,8 @@ Labels shown to the user: confirmed (the site itself reported the email), possib
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from .merge import merge_findings, routes_by_domain
@@ -151,3 +153,35 @@ def render_optout(entries: list[dict]) -> str:
                        else f"| {_cell(e['name'])} | {status} | {_cell(e.get('steps_summary'))} |")
         out.append("")
     return "\n".join(out)
+
+
+# ---------------------------------------------------------------- UI glue (no Gradio import)
+
+UI_OUTPUTS = 5  # trace, report, opt-out checklist, erasure drafts, files
+
+
+def write_files(bundle: dict) -> list:
+    d = tempfile.mkdtemp(prefix="redactor-")
+    md, js = os.path.join(d, "exposure-report.md"), os.path.join(d, "exposure-report.json")
+    with open(md, "w", encoding="utf-8") as f:
+        f.write(bundle["report_md"])
+    with open(js, "w", encoding="utf-8") as f:
+        json.dump({k: v for k, v in bundle.items() if k != "report_md"}, f, indent=2, default=str)
+    return [md, js]
+
+
+def ui_scan(mode, email, username, own, dispatch_fn=dispatch, entries=None, routes=None):
+    """Yields 5-tuples: (trace, report, checklist, drafts, files)."""
+    entries = load_entries() if entries is None else entries
+    routes = load_routes() if routes is None else routes
+    trace = []
+    try:
+        for ev in run_scan(mode, email, username, own, dispatch_fn=dispatch_fn, routes=routes):
+            if ev["type"] == "step":
+                trace.append("- " + ev["text"])
+                yield ("\n".join(trace), "", "", "", None)
+            else:
+                b = ev["bundle"]
+                yield ("\n".join(trace), b["report_md"], render_optout(entries), "", write_files(b))
+    except ValueError as e:
+        yield (f"**Error:** {e}", "", "", "", None)

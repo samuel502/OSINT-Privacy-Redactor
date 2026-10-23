@@ -12,14 +12,14 @@ from privacy_agent.agent import format_event, run_agent  # noqa: E402
 from privacy_agent.banner import banner_html  # noqa: E402
 from privacy_agent.env import key_status, load_env  # noqa: E402
 from privacy_agent.llm import LLMError, make_backend  # noqa: E402
-from privacy_agent.scan import load_entries, load_routes, render_optout, run_scan  # noqa: E402
+from privacy_agent.scan import ui_scan  # noqa: E402
 from privacy_agent.schema import validate_email  # noqa: E402
 
 load_env()
 
 JURISDICTIONS = [("EU / EEA (GDPR)", "gdpr"), ("UK (UK GDPR)", "uk_gdpr"),
                  ("California (CCPA)", "ccpa"), ("Other", "other")]
-BLANK = ("", "", "", "", None)
+BLANK = ("", "", "", None)  # after the trace: report, checklist, drafts, files
 KEY_HELP = """1. Get a free key at console.groq.com/keys. It is shown **once**, so copy it.
 2. Open a terminal in the project folder and run this one line. Typing is hidden, and the key never
    appears on screen or in your command history:
@@ -29,32 +29,6 @@ KEY_HELP = """1. Get a free key at console.groq.com/keys. It is shown **once**, 
 4. Restart the app (Ctrl+C, then `python app.py`). This page then shows the key as masked, e.g. `gsk_••••••••abcd`.
 5. No file? Paste the key into the masked box below instead. It is used for this session only and never saved.
 Never paste your key into chat, a command line or a screenshot."""
-
-
-def scan(mode, email, username, own):
-    """Deterministic scan (no LLM): lookups, merged report, OSINT-site opt-out checklist."""
-    blank = ("", "", "", "", None)
-    trace = []
-    try:
-        for ev in run_scan(mode, email, username, own, routes=load_routes()):
-            if ev["type"] == "step":
-                trace.append("- " + ev["text"])
-                yield ("\n".join(trace),) + blank
-            else:
-                b = ev["bundle"]
-                yield ("\n".join(trace), b["report_md"], render_optout(load_entries()), "", _write(b))
-    except ValueError as e:
-        yield (f"**Error:** {e}",) + blank
-
-
-def _write(bundle):
-    d = tempfile.mkdtemp(prefix="redactor-")
-    md, js = os.path.join(d, "exposure-report.md"), os.path.join(d, "exposure-report.json")
-    with open(md, "w", encoding="utf-8") as f:
-        f.write(bundle["report_md"])
-    with open(js, "w", encoding="utf-8") as f:
-        json.dump({k: v for k, v in bundle.items() if k != "report_md"}, f, indent=2, default=str)
-    return [md, js]
 
 
 def show_fields(mode):
@@ -117,7 +91,7 @@ with gr.Blocks(title="OSINT Privacy Redactor", theme=gr.themes.Soft()) as demo:
     provider.change(key_status, [provider, api_key], key_line)
     api_key.change(key_status, [provider, api_key], key_line)
     mode.change(show_fields, mode, [email, username])
-    run_plain.click(scan, [mode, email, username, own], outs)
+    run_plain.click(ui_scan, [mode, email, username, own], outs)
     run_agent_btn.click(audit_agent, [email, full_name, jurisdiction, provider, api_key], outs)
 
 if __name__ == "__main__":

@@ -93,3 +93,19 @@ def test_key_status_masks_and_never_shows_full_key():
     t = key_status("groq", typed=k, environ={})
     assert "this session" in t and k not in t
     assert mask_key("short") == "••••••••"
+
+
+def test_ui_scan_always_yields_five_values_and_files_last():
+    from privacy_agent.scan import UI_OUTPUTS, ui_scan
+    rows = list(ui_scan("both", "a@example.com", "samplehandle", True, dispatch_fn=fake_dispatch,
+                        entries=[], routes={}))
+    assert all(len(r) == UI_OUTPUTS for r in rows)
+    last = rows[-1]
+    assert "What was found" in last[1] and isinstance(last[4], list) and all(p.endswith((".md", ".json")) for p in last[4])
+    assert all(r[4] is None for r in rows[:-1])
+
+
+def test_ui_scan_error_row_has_five_values():
+    from privacy_agent.scan import UI_OUTPUTS, ui_scan
+    rows = list(ui_scan("email", "a@example.com", "", False, dispatch_fn=fake_dispatch, entries=[], routes={}))
+    assert len(rows) == 1 and len(rows[0]) == UI_OUTPUTS and rows[0][0].startswith("**Error:**")
