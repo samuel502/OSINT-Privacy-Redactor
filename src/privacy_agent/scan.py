@@ -179,7 +179,8 @@ def ui_scan(mode, email, username, own, dispatch_fn=dispatch, entries=None, rout
         for ev in run_scan(mode, email, username, own, dispatch_fn=dispatch_fn, routes=routes):
             if ev["type"] == "step":
                 trace.append("- " + ev["text"])
-                yield ("\n".join(trace), "", "", "", None)
+                t = "\n".join(trace)
+                yield (t, "### Scan running... please wait\n\nThis can take a few minutes. Keep this page and the terminal open.\n\n" + t, "", "", None)
             else:
                 b = ev["bundle"]
                 yield ("\n".join(trace), b["report_md"], render_optout(entries), "", write_files(b))
