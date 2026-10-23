@@ -34,7 +34,7 @@ HIT = {"registered", "found", "taken"}
 ABSENT = {"not registered", "not found", "available"}
 # Fields safe to show the model. Anything else (bio, about, description...) is dropped.
 KEEP_EXTRA = ("name", "username", "joined", "created", "followers", "following", "location",
-              "last_profile_update", "last_active", "last_seen")
+              "last_profile_update", "last_active", "last_seen", "has_public_page")
 MAX_VALUE = 80
 MAX_HITS = 60
 
@@ -57,7 +57,9 @@ def _clean_extra(extra: dict | None) -> dict:
 def _avatar(media) -> str:
     """Profile picture link if the site gave one. https only, capped. Never fetched by us."""
     url = (media or {}).get("avatar") if isinstance(media, dict) else None
-    return url[:300] if isinstance(url, str) and url.startswith("https://") else ""
+    if not (isinstance(url, str) and url.startswith("https://")) or "default" in url.lower():
+        return ""  # sites return a grey placeholder when there is no real picture: not a profile picture
+    return url[:300]
 
 
 def parse_rows(rows: list[dict], kind: str) -> dict:

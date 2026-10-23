@@ -7,6 +7,8 @@ from privacy_agent.scan import (load_entries, load_routes, render_optout, run_sc
 
 
 def fake_dispatch(name, args, ctx):
+    if name == "public_profiles":
+        return result("ok", {"sources": {"gravatar": "none", "github": "none"}, "profiles": []}, "gravatar+github")
     if name == "email_scan":
         return result("ok", {"hits": [{"site": "Etsy", "category": "shopping", "url": "https://www.etsy.com",
                                        "label": "registered", "source": "user-scanner"}],
@@ -157,7 +159,7 @@ def _email_with_usernames(*names):
 
 def test_pivot_usernames_filters_dedupes_and_caps():
     from privacy_agent.scan import pivot_usernames
-    r = _email_with_usernames("live:bad", "-rf", "Alpha", "alpha", "beta", "gamma", "delta", "typed")
+    r = _email_with_usernames("live:bad", "-rf", "Alpha", "alpha", "beta", "gamma", "delta", "typed", "v6zqvxstgrwfyqaw")
     assert pivot_usernames(r, ["typed"]) == ["Alpha", "beta", "gamma"]
     assert pivot_usernames(None) == []
 
@@ -167,6 +169,8 @@ def test_pivot_runs_username_scan_for_found_handles_and_adds_profile_link():
 
     def disp(name, args, ctx):
         calls.append((name, args.get("username")))
+        if name == "public_profiles":
+            return result("ok", {"sources": {}, "profiles": []}, "x")
         if name == "email_scan":
             return _email_with_usernames("sample_handle")
         if name == "breach_lookup":
@@ -186,6 +190,8 @@ def test_pivot_runs_username_scan_for_found_handles_and_adds_profile_link():
 
 def test_pivot_skipped_when_email_scan_failed():
     def disp(name, args, ctx):
+        if name == "public_profiles":
+            return result("error", source="x", error="down")
         if name == "email_scan":
             return result("error", source="x", error="down")
         if name == "breach_lookup":
@@ -216,3 +222,16 @@ def test_header_says_not_reported_when_no_dates():
     out = render_cards_html(_merged_with({"site": "Canva", "category": "c", "url": "https://canva.com",
                                           "label": "registered", "source": "user-scanner"}))
     assert out.count("not reported by any site") == 2
+
+
+def test_looks_generated_flags_random_handles_only():
+    from privacy_agent.scan import looks_generated
+    assert looks_generated("v6zqvxstgrwfyqaw")
+    assert not looks_generated("samuel-nadel-526148215") and not looks_generated("Samuel90388")
+    assert not looks_generated("samuel502")
+
+
+def test_pivot_prefers_public_profile_handles():
+    from privacy_agent.scan import pivot_usernames
+    prof = result("ok", {"profiles": [{"details": {"username": "owner_chosen"}}]}, "x")
+    assert pivot_usernames(_email_with_usernames("other"), profiles_res=prof)[0] == "owner_chosen"

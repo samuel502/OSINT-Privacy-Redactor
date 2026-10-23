@@ -24,7 +24,8 @@ DOMAIN_ALIASES = {"twitter.com": "x.com", "mobile.twitter.com": "x.com", "office
 STORE_HOSTS = {"play.google.com", "apps.apple.com", "itunes.apple.com", "chrome.google.com",
                "chromewebstore.google.com", "github.com", "web.archive.org"}
 
-CHECK_NAMES = {"email_scan": "email accounts", "username_scans": "username search", "breach": "breaches"}
+CHECK_NAMES = {"email_scan": "email accounts", "username_scans": "username search", "breach": "breaches",
+               "profiles": "public profiles (Gravatar, GitHub)"}
 
 
 def domain_key(site: str, url: str = "") -> str:
@@ -97,7 +98,8 @@ def _removal(key: str, routes: dict | None) -> dict:
 
 
 def merge_findings(email_scan: dict | None = None, username_scans: list | None = None,
-                   breach: dict | None = None, routes: dict | None = None) -> dict:
+                   breach: dict | None = None, routes: dict | None = None,
+                   profiles: dict | None = None) -> dict:
     accounts: dict = {}
     failed: list = []
     ok: list = []
@@ -135,6 +137,20 @@ def merge_findings(email_scan: dict | None = None, username_scans: list | None =
         if data.get("errors"):
             notes.append(f"{data['errors']} sites errored or were blocked during a username search and were not checked.")
 
+    if profiles is not None and not _failed(profiles, CHECK_NAMES["profiles"], failed, notes):
+        ok.append(CHECK_NAMES["profiles"])
+        for p in (profiles.get("data") or {}).get("profiles", []):
+            ev = "public_profile" if p.get("label") == "public_profile" else "username_match"
+            key = domain_key(p.get("site", ""), p.get("url", ""))
+            _add(accounts, key, p.get("site", ""), p.get("url", ""), ev, p.get("via", "profiles"),
+                 p.get("details"), p.get("category", ""), p.get("avatar", ""))
+            if p.get("profile_url"):
+                accounts[key]["profile_url"] = p["profile_url"]
+            if p.get("note"):
+                accounts[key]["note"] = p["note"]
+            if p.get("label") == "linked_profile":
+                accounts[key]["listed_by"] = p.get("via", "")
+
     breach_names: list = []
     if breach is not None and not _failed(breach, CHECK_NAMES["breach"], failed, notes):
         ok.append(CHECK_NAMES["breach"])
@@ -145,7 +161,7 @@ def merge_findings(email_scan: dict | None = None, username_scans: list | None =
 
     out = []
     for a in accounts.values():
-        a["label"] = "confirmed" if "email_registered" in a["evidence"] else "possible_match"
+        a["label"] = "confirmed" if ({"email_registered", "public_profile"} & set(a["evidence"])) else "possible_match"
         a["removal"] = _removal(a["domain"], routes)
         out.append(a)
     out.sort(key=lambda a: (a["label"] != "confirmed", a["site"].lower()))

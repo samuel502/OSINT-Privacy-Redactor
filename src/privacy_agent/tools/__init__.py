@@ -11,6 +11,7 @@ from .breaches import breach_lookup
 from .erasure import draft_erasure_request
 from .footprint import footprint_probe
 from .playbooks import search_playbooks
+from .publicprofiles import public_profiles
 from .userscan import email_scan, username_scan
 
 CATEGORIES = ["account_service", "lookup_service", "aggregator", "browser_config"]
@@ -74,6 +75,8 @@ def dispatch(name: str, args: dict, ctx: dict) -> dict:
             return username_scan(str(args.get("username", "")))
         if name == "footprint_probe":  # kept for the no-LLM pipeline; not declared to the model
             return footprint_probe(ctx["email"])
+        if name == "public_profiles":  # used by the no-LLM scan; not declared to the model
+            return public_profiles(ctx["email"])
         if name == "breach_lookup":
             return breach_lookup(ctx["email"])
         if name == "search_playbooks":

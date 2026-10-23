@@ -54,21 +54,36 @@ def load_routes() -> dict:
 MAX_PIVOT = 3
 
 
-def pivot_usernames(email_res: dict | None, already: list | None = None, limit: int = MAX_PIVOT) -> list:
-    """Usernames that sites reported for the email, valid and de-duplicated, capped (each search is slow)."""
+def looks_generated(u: str) -> bool:
+    """Auto-generated handles (e.g. random letters) match nobody else, so searching them is wasted time."""
+    letters = [c for c in u.lower() if c.isalpha()]
+    return len(letters) >= 10 and sum(c in "aeiou" for c in letters) / len(letters) < 0.2
+
+
+def pivot_usernames(email_res: dict | None, already: list | None = None, limit: int = MAX_PIVOT,
+                    profiles_res: dict | None = None) -> list:
+    """Usernames sites or public profiles reported for the email: valid, de-duplicated, capped.
+
+    Public-profile handles come first (the owner published them). Random-looking handles are skipped.
+    """
     seen = {u.lower() for u in (already or [])}
-    out = []
+    cands = []
+    for p in ((profiles_res or {}).get("data") or {}).get("profiles", []):
+        cands.append((p.get("details") or {}).get("username"))
     for h in ((email_res or {}).get("data") or {}).get("hits", []):
-        u = (h.get("details") or {}).get("username")
+        cands.append((h.get("details") or {}).get("username"))
+    out = []
+    for u in cands:
         if not u:
             continue
         try:
             u = validate_username(u)
         except ValueError:
             continue
-        if u.lower() not in seen:
-            seen.add(u.lower())
-            out.append(u)
+        if u.lower() in seen or looks_generated(u):
+            continue
+        seen.add(u.lower())
+        out.append(u)
     return out[:limit]
 
 
@@ -76,13 +91,16 @@ def run_scan(mode: str, email: str, username: str, own: bool, dispatch_fn=dispat
     """Generator: {"type": "step", "text"} events, then one {"type": "bundle", "bundle"}."""
     clean_email, clean_user = validate_scan_inputs(mode, email, username, own)
     ctx = {"email": clean_email or "", "jurisdiction": "other"}
-    email_res = breach_res = None
+    email_res = breach_res = profiles_res = None
     user_res = []
 
     if clean_email:
         yield {"type": "step", "text": "Checking which services have an account for this email (about 30 seconds to a few minutes)..."}
         email_res = dispatch_fn("email_scan", {}, ctx)
         yield {"type": "step", "text": f"  -> email scan: {email_res['status']}"}
+        yield {"type": "step", "text": "Looking for public profiles you published (Gravatar, GitHub)..."}
+        profiles_res = dispatch_fn("public_profiles", {}, ctx)
+        yield {"type": "step", "text": f"  -> public profiles: {profiles_res['status']}"}
         yield {"type": "step", "text": "Checking known data breaches..."}
         breach_res = dispatch_fn("breach_lookup", {}, ctx)
         yield {"type": "step", "text": f"  -> breach check: {breach_res['status']}"}
@@ -92,16 +110,16 @@ def run_scan(mode: str, email: str, username: str, own: bool, dispatch_fn=dispat
         user_res.append(r)
         yield {"type": "step", "text": f"  -> username scan: {r['status']}"}
 
-    if pivot and email_res and email_res.get("status") == "ok":
-        for u in pivot_usernames(email_res, [clean_user] if clean_user else []):
+    if pivot and clean_email and (email_res or profiles_res):
+        for u in pivot_usernames(email_res, [clean_user] if clean_user else [], profiles_res=profiles_res):
             yield {"type": "step", "text": f"Searching profile pages for a username the sites reported ({u}); this takes a few minutes..."}
             r = dispatch_fn("username_scan", {"username": u}, ctx)
             user_res.append(r)
             yield {"type": "step", "text": f"  -> username scan for {u}: {r['status']}"}
 
     merged = merge_findings(email_scan=email_res, username_scans=user_res or None,
-                            breach=breach_res, routes=routes if routes is not None else {})
-    bundle = {"mode": mode, "merged": merged, "raw": {"email_scan": email_res, "breach": breach_res,
+                            breach=breach_res, routes=routes if routes is not None else {}, profiles=profiles_res)
+    bundle = {"mode": mode, "merged": merged, "raw": {"email_scan": email_res, "breach": breach_res, "public_profiles": profiles_res,
                                                      "username_scans": user_res}}
     bundle["report_md"] = render_exposure(merged, mode)
     bundle["report_html"] = render_cards_html(merged)
@@ -129,7 +147,7 @@ def render_exposure(merged: dict, mode: str = "both") -> str:
     possible = [a for a in merged["accounts"] if a["label"] == "possible_match"]
     if confirmed:
         out += ["", "### Confirmed accounts",
-                "The site itself said this email is registered.", "",
+                "The site said this email is registered, or a public profile is tied to it.", "",
                 "| Site | Category | Details the site shows | Found by |", "| --- | --- | --- | --- |"]
         for a in confirmed:
             det = ", ".join(f"{k}: {v}" for k, v in a["details"].items())
@@ -163,8 +181,9 @@ CSS = """<style>
 .xp .chip{display:inline-block;border:1px solid var(--b);border-radius:999px;padding:2px 10px;margin:2px 4px 2px 0;font-size:13px}
 .xp .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
 .xp .head{display:flex;gap:10px;align-items:center;margin-bottom:6px}
-.xp .av{width:44px;height:44px;border-radius:50%;object-fit:cover;flex:none}
-.xp .ini{width:44px;height:44px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-weight:700;border:1px solid var(--b)}
+.xp .avw{position:relative;width:44px;height:44px;flex:none}
+.xp .av{position:absolute;inset:0;width:44px;height:44px;border-radius:50%;object-fit:cover}
+.xp .ini{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700}
 .xp .nm{font-weight:700}.xp .cat{font-size:12px;opacity:.7}
 .xp dl{margin:6px 0 0;display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:13px}
 .xp dt{opacity:.65}.xp dd{margin:0;word-break:break-word}
@@ -176,7 +195,7 @@ CSS = """<style>
 DETAIL_LABELS = {"name": "Name", "username": "Username", "joined": "Joined", "created": "Created",
                  "last_profile_update": "Profile updated", "last_active": "Last active",
                  "last_seen": "Last seen", "location": "Location", "followers": "Followers",
-                 "following": "Following"}
+                 "following": "Following", "has_public_page": "Public profile page"}
 
 
 def _e(x, n=120) -> str:
@@ -202,17 +221,28 @@ def html_notice(title: str, body: str = "") -> str:
 def _card(a: dict) -> str:
     name = _e(a["site"], 60)
     av = _https(a.get("avatar", ""))
-    pic = (f'<img class="av" src="{_e(av, 300)}" alt="" loading="lazy" referrerpolicy="no-referrer">' if av
-           else f'<div class="ini">{_e((a["site"] or "?")[:1].upper(), 2)}</div>')
+    hue = sum(map(ord, a["site"] or "?")) * 37 % 360
+    img = (f'<img class="av" src="{_e(av, 300)}" alt="" loading="lazy" referrerpolicy="no-referrer" '
+           f'onerror="this.remove()">' if av else "")
+    pic = (f'<div class="avw"><div class="ini" style="background:hsl({hue} 55% 42%);color:#fff">'
+           f'{_e((a["site"] or "?")[:1].upper(), 2)}</div>{img}</div>')
     cat = f'<div class="cat">{_e(a.get("category", ""), 30)}</div>' if a.get("category") else ""
-    status = "Registered with your email" if a["label"] == "confirmed" else "Username page exists (possible match)"
+    status = ("Registered with your email" if "email_registered" in a["evidence"] else
+              "Public profile for your email" if "public_profile" in a["evidence"] else
+              "Listed on a public profile" if a.get("listed_by") else "Username page exists (possible match)")
     rows = f"<dt>Account</dt><dd>{_e(status, 60)}</dd>" + "".join(
         f"<dt>{_e(DETAIL_LABELS.get(k, k), 30)}</dt><dd>{_e(v, 80)}</dd>" for k, v in a["details"].items())
-    if a["label"] == "confirmed" and a.get("profile_url"):
+    if a["label"] == "confirmed" and "public_profile" in a["evidence"]:
+        tag = a.get("note") or "confirmed: public profile tied to this email"
+        link = _link(a.get("profile_url") or a["url"], "Open profile page")
+    elif a["label"] == "confirmed" and a.get("profile_url"):
         tag = "confirmed by email; profile page found by username (check it is yours)"
         link = _link(a["profile_url"], "Open profile page")
     elif a["label"] == "confirmed":
         tag, link = "confirmed: the site reported this email", _link(a["url"], "Open site (login page, not your profile)")
+    elif a.get("listed_by"):
+        tag = f"listed by the owner on the {a['listed_by'].capitalize()} profile for this email"
+        link = _link(a["url"], "Open profile page")
     else:
         tag, link = "possible match: may be someone else", _link(a["url"], "Open profile page")
     rem = a.get("removal", {})
@@ -278,7 +308,7 @@ def render_cards_html(merged: dict) -> str:
                f'<div class="box"><b>Accounts</b><span style="font-size:26px;font-weight:700">{len(accounts)}</span>'
                f'<div class="tag">{s["confirmed"]} confirmed, {s["possible"]} possible</div></div>'
                f'<div class="box"><b>Earliest join date reported</b>{_e(first.isoformat() if first else "not reported by any site", 40)}</div>'
-               f'<div class="box"><b>Latest activity reported</b>{_e(last.isoformat() if last else "not reported by any site", 40)}</div>'
+               f'<div class="box"><b>Newest date any site reported</b>{_e(last.isoformat() if last else "not reported by any site", 40)}<div class="tag">Sites report different things (profile update, last active). Real activity may be newer.</div></div>'
                '</div>')
     out.append('<div class="sum">'
                f'<div class="box"><b>Names shown by sites</b>{_chips(names)}</div>'
@@ -291,7 +321,7 @@ def render_cards_html(merged: dict) -> str:
                '<div class="box"><b>Profile links</b>' +
                ("".join(f'<div>{_link(u, n + " \u2197")}</div>' for n, u in plinks) or '<span class="tag">none found</span>') +
                '</div></div>')
-    for label, title, sub in (("confirmed", "Confirmed accounts", "The site itself said this email is registered."),
+    for label, title, sub in (("confirmed", "Confirmed accounts", "The site said this email is registered, or a public profile is tied to it."),
                               ("possible_match", "Possible matches (username)",
                                "These pages exist for that username. They may belong to someone else.")):
         group = [a for a in accounts if a["label"] == label]
