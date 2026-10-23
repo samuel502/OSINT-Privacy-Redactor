@@ -20,6 +20,15 @@ load_env()
 JURISDICTIONS = [("EU / EEA (GDPR)", "gdpr"), ("UK (UK GDPR)", "uk_gdpr"),
                  ("California (CCPA)", "ccpa"), ("Other", "other")]
 BLANK = ("", "", "", "", None)
+KEY_HELP = """1. Get a free key at console.groq.com/keys. It is shown **once**, so copy it.
+2. Open a terminal in the project folder and run this one line. Typing is hidden, and the key never
+   appears on screen or in your command history:
+
+   `read -s -p "Paste key (hidden): " K; printf 'GROQ_API_KEY=%s\\n' "$K" > .env; unset K; echo`
+3. Run `git status`. `.env` must **not** be listed (it is git-ignored). Never use `git add -f .env`.
+4. Restart the app (Ctrl+C, then `python app.py`). This page then shows the key as masked, e.g. `gsk_••••••••abcd`.
+5. No file? Paste the key into the masked box below instead. It is used for this session only and never saved.
+Never paste your key into chat, a command line or a screenshot."""
 
 
 def scan(mode, email, username, own):
@@ -85,6 +94,8 @@ with gr.Blocks(title="OSINT Privacy Redactor", theme=gr.themes.Soft()) as demo:
     run_plain = gr.Button("Scan (no LLM key needed)", variant="primary")
     with gr.Accordion("Agentic audit (needs a free Groq or Gemini key)", open=False):
         key_line = gr.Markdown(key_status("groq"))
+        with gr.Accordion("How to save your key safely", open=False):
+            gr.Markdown(KEY_HELP)
         with gr.Row():
             provider = gr.Dropdown([("Groq", "groq"), ("Gemini", "gemini")], value="groq",
                                    label="Provider")

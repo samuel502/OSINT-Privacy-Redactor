@@ -39,15 +39,31 @@ Every tool returns one shape (`status: ok | unavailable | error`). `unavailable`
 - **Human in the loop.** Erasure requests are drafts. The tool never reads your mailbox, and you click any confirmation links yourself. It does not solve CAPTCHAs.
 
 ## Run locally
+Steps for Git Bash on Windows. On Mac or Linux, activate with `source .venv/bin/activate`.
 ```bash
+git clone https://github.com/samuel502/OSINT-Privacy-Redactor.git && cd OSINT-Privacy-Redactor
+python -m venv .venv                  # private folder for this project's packages
+source .venv/Scripts/activate         # you should now see (.venv)
 pip install -r requirements.txt
-read -rsp "Groq API key: " GROQ_API_KEY; echo; export GROQ_API_KEY   # key stays hidden while you type (console.groq.com/keys)
-# or: export GEMINI_API_KEY=...      # Google AI Studio key
+python app.py                         # open http://127.0.0.1:7860
+```
+The scan needs no key. Only the optional agentic audit needs a free Groq key (console.groq.com/keys).
 
+### Saving your key safely (optional, for the agentic audit)
+The key is shown once, so copy it, then run this one line. Typing is hidden and the key never appears in
+your command history or on screen:
+```bash
+read -s -p "Paste key (hidden): " K; printf 'GROQ_API_KEY=%s\n' "$K" > .env; unset K; echo
+```
+1. `.env` is in `.gitignore`, so it is never committed. Check with `git status`: `.env` must not be listed.
+2. Never use `git add -f .env`, and never paste the key into chat, a command or a screenshot.
+3. Restart the app. The page shows a masked line such as `gsk_••••••••abcd` when a key is in use.
+4. Prefer not to use a file? Paste the key into the masked box on the page (this session only, not saved).
+
+```bash
 python -m pytest                                              # tests, no network or key needed
 python cli.py me@example.com --tools-only                    # tools only, no LLM quota used
 python cli.py me@example.com                                 # full agent loop (--provider groq|gemini)
-python app.py                                                 # Gradio UI
 ```
 A VPN can make lookups fail or return blocked results. Turn it off for a fair scan.
 
