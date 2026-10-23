@@ -129,6 +129,9 @@ def merge_findings(email_scan: dict | None = None, username_scans: list | None =
             _add(accounts, domain_key(h.get("site", ""), h.get("url", "")), h.get("site", ""),
                  h.get("url", ""), "username_match", h.get("source", "username_scan"), h.get("details"),
                  h.get("category", ""), h.get("avatar", ""))
+            acc = accounts[domain_key(h.get("site", ""), h.get("url", ""))]
+            if h.get("url") and not acc.get("profile_url"):
+                acc["profile_url"] = h["url"]
         if data.get("errors"):
             notes.append(f"{data['errors']} sites errored or were blocked during a username search and were not checked.")
 

@@ -51,7 +51,28 @@ def load_routes() -> dict:
     return routes_by_domain(load_entries())
 
 
-def run_scan(mode: str, email: str, username: str, own: bool, dispatch_fn=dispatch, routes=None):
+MAX_PIVOT = 3
+
+
+def pivot_usernames(email_res: dict | None, already: list | None = None, limit: int = MAX_PIVOT) -> list:
+    """Usernames that sites reported for the email, valid and de-duplicated, capped (each search is slow)."""
+    seen = {u.lower() for u in (already or [])}
+    out = []
+    for h in ((email_res or {}).get("data") or {}).get("hits", []):
+        u = (h.get("details") or {}).get("username")
+        if not u:
+            continue
+        try:
+            u = validate_username(u)
+        except ValueError:
+            continue
+        if u.lower() not in seen:
+            seen.add(u.lower())
+            out.append(u)
+    return out[:limit]
+
+
+def run_scan(mode: str, email: str, username: str, own: bool, dispatch_fn=dispatch, routes=None, pivot: bool = False):
     """Generator: {"type": "step", "text"} events, then one {"type": "bundle", "bundle"}."""
     clean_email, clean_user = validate_scan_inputs(mode, email, username, own)
     ctx = {"email": clean_email or "", "jurisdiction": "other"}
@@ -70,6 +91,13 @@ def run_scan(mode: str, email: str, username: str, own: bool, dispatch_fn=dispat
         r = dispatch_fn("username_scan", {"username": clean_user}, ctx)
         user_res.append(r)
         yield {"type": "step", "text": f"  -> username scan: {r['status']}"}
+
+    if pivot and email_res and email_res.get("status") == "ok":
+        for u in pivot_usernames(email_res, [clean_user] if clean_user else []):
+            yield {"type": "step", "text": f"Searching profile pages for a username the sites reported ({u}); this takes a few minutes..."}
+            r = dispatch_fn("username_scan", {"username": u}, ctx)
+            user_res.append(r)
+            yield {"type": "step", "text": f"  -> username scan for {u}: {r['status']}"}
 
     merged = merge_findings(email_scan=email_res, username_scans=user_res or None,
                             breach=breach_res, routes=routes if routes is not None else {})
@@ -179,7 +207,10 @@ def _card(a: dict) -> str:
     cat = f'<div class="cat">{_e(a.get("category", ""), 30)}</div>' if a.get("category") else ""
     rows = "".join(f"<dt>{_e(DETAIL_LABELS.get(k, k), 30)}</dt><dd>{_e(v, 80)}</dd>"
                    for k, v in a["details"].items())
-    if a["label"] == "confirmed":
+    if a["label"] == "confirmed" and a.get("profile_url"):
+        tag = "confirmed by email; profile page found by username (check it is yours)"
+        link = _link(a["profile_url"], "Open profile page")
+    elif a["label"] == "confirmed":
         tag, link = "confirmed: the site reported this email", _link(a["url"], "Open site (login page, not your profile)")
     else:
         tag, link = "possible match: may be someone else", _link(a["url"], "Open profile page")
@@ -289,13 +320,13 @@ def write_files(bundle: dict) -> list:
     return [md, js]
 
 
-def ui_scan(mode, email, username, own, dispatch_fn=dispatch, entries=None, routes=None):
+def ui_scan(mode, email, username, own, pivot=False, dispatch_fn=dispatch, entries=None, routes=None):
     """Yields 5-tuples: (trace, report, checklist, drafts, files)."""
     entries = load_entries() if entries is None else entries
     routes = load_routes() if routes is None else routes
     trace = []
     try:
-        for ev in run_scan(mode, email, username, own, dispatch_fn=dispatch_fn, routes=routes):
+        for ev in run_scan(mode, email, username, own, dispatch_fn=dispatch_fn, routes=routes, pivot=pivot):
             if ev["type"] == "step":
                 trace.append("- " + ev["text"])
                 t = "\n".join(trace)

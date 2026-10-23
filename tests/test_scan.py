@@ -146,3 +146,49 @@ def test_user_scanner_avatar_is_https_only():
              "media": {"avatar": "http://cdn.example/p.png"}}]
     hits = parse_rows(rows, "email")["hits"]
     assert hits[0]["avatar"].startswith("https://") and "avatar" not in hits[1]
+
+
+def _email_with_usernames(*names):
+    hits = [{"site": f"Site{i}", "category": "x", "url": f"https://site{i}.example", "label": "registered",
+             "source": "user-scanner", "details": {"username": n}} for i, n in enumerate(names)]
+    return result("ok", {"hits": hits, "hit_count": len(hits), "checked": len(hits), "absent": 0,
+                         "errors": 0, "skipped": 0}, "user-scanner")
+
+
+def test_pivot_usernames_filters_dedupes_and_caps():
+    from privacy_agent.scan import pivot_usernames
+    r = _email_with_usernames("live:bad", "-rf", "Alpha", "alpha", "beta", "gamma", "delta", "typed")
+    assert pivot_usernames(r, ["typed"]) == ["Alpha", "beta", "gamma"]
+    assert pivot_usernames(None) == []
+
+
+def test_pivot_runs_username_scan_for_found_handles_and_adds_profile_link():
+    calls = []
+
+    def disp(name, args, ctx):
+        calls.append((name, args.get("username")))
+        if name == "email_scan":
+            return _email_with_usernames("sample_handle")
+        if name == "breach_lookup":
+            return result("ok", {"breaches": []}, "x")
+        d = {"hits": [{"site": "Site0", "category": "x", "url": "https://site0.example/u/sample_handle",
+                       "label": "possible_match", "source": "user-scanner"}],
+             "hit_count": 1, "checked": 1, "absent": 0, "errors": 0, "skipped": 0}
+        return result("ok", d, "user-scanner")
+    b = list(run_scan("email", "a@example.com", "", True, dispatch_fn=disp, routes={}, pivot=True))[-1]["bundle"]
+    assert ("username_scan", "sample_handle") in calls
+    assert 'href="https://site0.example/u/sample_handle"' in b["report_html"]
+    assert "profile page found by username" in b["report_html"]
+    calls.clear()
+    list(run_scan("email", "a@example.com", "", True, dispatch_fn=disp, routes={}, pivot=False))
+    assert not any(n == "username_scan" for n, _ in calls)
+
+
+def test_pivot_skipped_when_email_scan_failed():
+    def disp(name, args, ctx):
+        if name == "email_scan":
+            return result("error", source="x", error="down")
+        if name == "breach_lookup":
+            return result("ok", {"breaches": []}, "x")
+        raise AssertionError("username_scan must not run")
+    list(run_scan("email", "a@example.com", "", True, dispatch_fn=disp, routes={}, pivot=True))

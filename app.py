@@ -70,6 +70,8 @@ with gr.Blocks(title="OSINT Privacy Redactor", theme=gr.themes.Soft()) as demo:
         full_name = gr.Textbox(label="Full name (optional, agentic mode only)", scale=2)
         jurisdiction = gr.Dropdown(JURISDICTIONS, value="gdpr", label="Jurisdiction (agentic mode)")
     own = gr.Checkbox(label="This is my own email address / username", value=False)
+    pivot = gr.Checkbox(label="Also search the usernames the sites report for my email (finds profile links; slower)",
+                        value=True)
     run_plain = gr.Button("Scan (no LLM key needed)", variant="primary")
     with gr.Accordion("Agentic audit (needs a free Groq or Gemini key)", open=False):
         key_line = gr.Markdown(key_status("groq"))
@@ -96,7 +98,7 @@ with gr.Blocks(title="OSINT Privacy Redactor", theme=gr.themes.Soft()) as demo:
     provider.change(key_status, [provider, api_key], key_line)
     api_key.change(key_status, [provider, api_key], key_line)
     mode.change(show_fields, mode, [email, username])
-    run_plain.click(ui_scan, [mode, email, username, own], outs)
+    run_plain.click(ui_scan, [mode, email, username, own, pivot], outs)
     run_agent_btn.click(audit_agent, [email, full_name, jurisdiction, provider, api_key], outs)
 
 if __name__ == "__main__":
