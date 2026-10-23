@@ -205,8 +205,9 @@ def _card(a: dict) -> str:
     pic = (f'<img class="av" src="{_e(av, 300)}" alt="" loading="lazy" referrerpolicy="no-referrer">' if av
            else f'<div class="ini">{_e((a["site"] or "?")[:1].upper(), 2)}</div>')
     cat = f'<div class="cat">{_e(a.get("category", ""), 30)}</div>' if a.get("category") else ""
-    rows = "".join(f"<dt>{_e(DETAIL_LABELS.get(k, k), 30)}</dt><dd>{_e(v, 80)}</dd>"
-                   for k, v in a["details"].items())
+    status = "Registered with your email" if a["label"] == "confirmed" else "Username page exists (possible match)"
+    rows = f"<dt>Account</dt><dd>{_e(status, 60)}</dd>" + "".join(
+        f"<dt>{_e(DETAIL_LABELS.get(k, k), 30)}</dt><dd>{_e(v, 80)}</dd>" for k, v in a["details"].items())
     if a["label"] == "confirmed" and a.get("profile_url"):
         tag = "confirmed by email; profile page found by username (check it is yours)"
         link = _link(a["profile_url"], "Open profile page")
@@ -219,12 +220,37 @@ def _card(a: dict) -> str:
     if rem.get("status") in ("verified", "unverified") and rem.get("url"):
         rm = f' &middot; {_link(rem["url"], "Removal route (" + ("verified" if rem["status"] == "verified" else "researched, not tested") + ")")}'
     return (f'<div class="card"><div class="head">{pic}<div><div class="nm">{name}</div>{cat}</div></div>'
-            f'<div class="tag">{_e(tag)}</div>{"<dl>" + rows + "</dl>" if rows else ""}'
+            f'<div class="tag">{_e(tag)}</div><dl>{rows}</dl>'
             f'<div class="foot">{link}{rm}</div></div>')
 
 
 def _chips(values) -> str:
     return "".join(f'<span class="chip">{_e(v, 60)}</span>' for v in values) or '<span class="tag">none reported</span>'
+
+
+def _date(v: str):
+    from datetime import date
+    try:
+        return date.fromisoformat(str(v)[:10])
+    except ValueError:
+        return None
+
+
+def _date_range(accounts: list):
+    """Earliest 'joined/created' and latest 'last_*/updated' date any site reported. None if none did."""
+    joined = [d for a in accounts for k in ("joined", "created") if (d := _date(a["details"].get(k)))]
+    last = [d for a in accounts for k in ("last_active", "last_seen", "last_profile_update")
+            if (d := _date(a["details"].get(k)))]
+    return (min(joined) if joined else None), (max(last) if last else None)
+
+
+def _profile_links(accounts: list) -> list:
+    out = []
+    for a in accounts:
+        u = a.get("profile_url") or (a["url"] if a["label"] == "possible_match" else "")
+        if u and _link(u, "x"):
+            out.append((a["site"], u))
+    return out
 
 
 def render_cards_html(merged: dict) -> str:
@@ -246,6 +272,14 @@ def render_cards_html(merged: dict) -> str:
     if s["checks_failed"]:
         out.append('<div class="warn"><b>Some checks did not run:</b> ' + _e(", ".join(s["checks_failed"]), 200) +
                    '. This is not the same as "nothing found". Details at the bottom.</div>')
+    first, last = _date_range(accounts)
+    plinks = _profile_links(accounts)
+    out.append('<div class="sum">'
+               f'<div class="box"><b>Accounts</b><span style="font-size:26px;font-weight:700">{len(accounts)}</span>'
+               f'<div class="tag">{s["confirmed"]} confirmed, {s["possible"]} possible</div></div>'
+               f'<div class="box"><b>Earliest join date reported</b>{_e(first.isoformat() if first else "not reported by any site", 40)}</div>'
+               f'<div class="box"><b>Latest activity reported</b>{_e(last.isoformat() if last else "not reported by any site", 40)}</div>'
+               '</div>')
     out.append('<div class="sum">'
                f'<div class="box"><b>Names shown by sites</b>{_chips(names)}</div>'
                f'<div class="box"><b>Usernames</b>{_chips(users)}</div>'
@@ -253,7 +287,10 @@ def render_cards_html(merged: dict) -> str:
                "".join(f'<img src="{_e(u, 300)}" alt="" loading="lazy" referrerpolicy="no-referrer">' for u in pics) +
                ("" if pics else '<span class="tag">none reported</span>') +
                '</div><div class="tag">Loaded straight from each site by your browser.</div></div>'
-               f'<div class="box"><b>Data breaches</b>{_chips(merged["breaches"])}</div></div>')
+               f'<div class="box"><b>Data breaches</b>{_chips(merged["breaches"])}</div>'
+               '<div class="box"><b>Profile links</b>' +
+               ("".join(f'<div>{_link(u, n + " \u2197")}</div>' for n, u in plinks) or '<span class="tag">none found</span>') +
+               '</div></div>')
     for label, title, sub in (("confirmed", "Confirmed accounts", "The site itself said this email is registered."),
                               ("possible_match", "Possible matches (username)",
                                "These pages exist for that username. They may belong to someone else.")):

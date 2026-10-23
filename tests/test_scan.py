@@ -192,3 +192,27 @@ def test_pivot_skipped_when_email_scan_failed():
             return result("ok", {"breaches": []}, "x")
         raise AssertionError("username_scan must not run")
     list(run_scan("email", "a@example.com", "", True, dispatch_fn=disp, routes={}, pivot=True))
+
+
+def test_header_stats_profile_links_and_account_row():
+    from privacy_agent.scan import render_cards_html
+    from privacy_agent.merge import merge_findings
+    e = {"hits": [{"site": "Etsy", "category": "Shopping", "url": "https://www.etsy.com", "label": "registered",
+                   "source": "user-scanner", "details": {"joined": "2021-02-06 06:28:25",
+                                                         "last_profile_update": "2026-09-03"}}],
+         "hit_count": 1, "checked": 1, "absent": 0, "errors": 0, "skipped": 0}
+    u = {"hits": [{"site": "Etsy", "category": "Shopping", "url": "https://www.etsy.com/people/sample",
+                   "label": "possible_match", "source": "user-scanner"}],
+         "hit_count": 1, "checked": 1, "absent": 0, "errors": 0, "skipped": 0}
+    out = render_cards_html(merge_findings(email_scan=result("ok", e, "user-scanner"),
+                                           username_scans=[result("ok", u, "user-scanner")]))
+    assert "2021-02-06" in out and "2026-09-03" in out
+    assert "Profile links" in out and 'href="https://www.etsy.com/people/sample"' in out
+    assert "Registered with your email" in out
+
+
+def test_header_says_not_reported_when_no_dates():
+    from privacy_agent.scan import render_cards_html
+    out = render_cards_html(_merged_with({"site": "Canva", "category": "c", "url": "https://canva.com",
+                                          "label": "registered", "source": "user-scanner"}))
+    assert out.count("not reported by any site") == 2
