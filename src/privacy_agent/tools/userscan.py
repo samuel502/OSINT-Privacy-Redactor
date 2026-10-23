@@ -65,12 +65,18 @@ def _avatar(media) -> str:
 def parse_rows(rows: list[dict], kind: str) -> dict:
     """Turn user-scanner JSON rows into the compact summary the agent sees."""
     hits, counts = [], {"checked": 0, "absent": 0, "errors": 0, "skipped": 0}
+    not_checked = {"error_sites": [], "skipped_sites": []}
     for r in rows:
         status = str(r.get("status", "")).strip().lower()
+        site = str(r.get("site_name", ""))[:40]
         if status == "skipped":
             counts["skipped"] += 1
+            if site and len(not_checked["skipped_sites"]) < 120:
+                not_checked["skipped_sites"].append(site)
         elif status == "error":
             counts["errors"] += 1
+            if site and len(not_checked["error_sites"]) < 120:
+                not_checked["error_sites"].append(site)
         elif status in HIT:
             counts["checked"] += 1
             hit = {"site": str(r.get("site_name", ""))[:60],
@@ -90,7 +96,7 @@ def parse_rows(rows: list[dict], kind: str) -> dict:
     for h in hits:
         h["label"] = label
         h["source"] = SOURCE
-    return {"hits": hits[:MAX_HITS], "hit_count": len(hits), **counts}
+    return {"hits": hits[:MAX_HITS], "hit_count": len(hits), **counts, **not_checked}
 
 
 def _why(proc, value: str) -> str:

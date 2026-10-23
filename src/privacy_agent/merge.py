@@ -101,6 +101,7 @@ def merge_findings(email_scan: dict | None = None, username_scans: list | None =
                    breach: dict | None = None, routes: dict | None = None,
                    profiles: dict | None = None) -> dict:
     accounts: dict = {}
+    not_checked: dict = {"email_errors": [], "email_skipped": []}
     failed: list = []
     ok: list = []
     notes: list = []
@@ -114,6 +115,8 @@ def merge_findings(email_scan: dict | None = None, username_scans: list | None =
                  h.get("category", ""), h.get("avatar", ""))
         for d in data.get("confirmed_accounts", []):  # holehe fallback shape
             _add(accounts, domain_key(d, d), d, "", "email_registered", email_scan.get("source", ""), None)
+        not_checked["email_errors"] = list(data.get("error_sites", []))
+        not_checked["email_skipped"] = list(data.get("skipped_sites", []))
         if data.get("errors"):
             notes.append(f"{data['errors']} sites errored or were blocked during the email scan and were not checked.")
         if data.get("skipped"):
@@ -170,6 +173,7 @@ def merge_findings(email_scan: dict | None = None, username_scans: list | None =
         "accounts": out,
         "breaches": breach_names,
         "could_not_check": notes,
+        "not_checked": not_checked,
         "summary": {
             "confirmed": sum(a["label"] == "confirmed" for a in out),
             "possible": sum(a["label"] == "possible_match" for a in out),

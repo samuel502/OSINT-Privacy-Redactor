@@ -333,6 +333,12 @@ def render_cards_html(merged: dict) -> str:
                    'That is not proof none exist.</p>')
     if merged["could_not_check"]:
         out.append('<h3>Could not check</h3><ul>' + "".join(f"<li>{_e(n, 300)}</li>" for n in merged["could_not_check"]) + "</ul>")
+        nc = merged.get("not_checked") or {}
+        for key, title in (("email_errors", "Sites that errored or blocked the check"),
+                           ("email_skipped", "Sites skipped to avoid sending a password-reset email")):
+            if nc.get(key):
+                out.append(f'<details><summary>{_e(title)} ({len(nc[key])})</summary><div>' +
+                           "".join(f'<span class="chip">{_e(n, 40)}</span>' for n in nc[key]) + "</div></details>")
     out.append("</div>")
     return "".join(out)
 
@@ -507,6 +513,25 @@ def merged_from_events(events: list, routes=None) -> dict:
                           routes=routes if routes is not None else {}, profiles=obs.get("public_profiles"))
 
 
+def agent_extras(events: list, entries: list) -> str:
+    """Parts of the summary that code writes, so they are complete: checklist counts and every draft made."""
+    sites = [e for e in entries if e.get("category") == "lookup_service"]
+    out = []
+    if sites:
+        n = {t: sum(_tier(e) == t for e in sites) for t in (1, 2, 3)}
+        out.append(f"\n\n---\n**Opt-out checklist:** the next tab lists all {len(sites)} OSINT lookup sites with steps: "
+                   f"{n[1]} are a form plus an email link or code, {n[2]} need a bot check you click, "
+                   f"{n[3]} are a written email request.")
+    drafts = [e["result"]["data"] for e in events
+              if e.get("type") == "observation" and e.get("name") == "draft_erasure_request"
+              and e["result"].get("status") == "ok"]
+    if drafts:
+        out.append("\n\n**Drafts the agent produced** (nothing was sent; you send them yourself):")
+        for d in drafts:
+            out.append(f"\n\n*{d['platform']}*\n\n```\n{d['body']}\n```")
+    return "".join(out)
+
+
 def ui_agent(email, jurisdiction, backend, full_name=None, max_steps=14, dispatch_fn=dispatch,
              entries=None, routes=None):
     """Agentic run for the page. Yields 5-tuples: (trace, report_html, checklist, agent_summary_md, files).
@@ -547,4 +572,4 @@ def ui_agent(email, jurisdiction, backend, full_name=None, max_steps=14, dispatc
     if final and (final.get("truncated") or final.get("forced")):
         note = ("_The agent hit its step limit, so this answer was cut short._\n\n")
     yield ("\n\n".join(trace), bundle["report_html"], render_optout_html(entries),
-           note + (final["text"] if final else ""), write_files(bundle))
+           note + (final["text"] if final else "") + agent_extras(events, entries), write_files(bundle))

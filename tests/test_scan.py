@@ -349,3 +349,31 @@ def test_plain_scan_tells_the_user_the_summary_tab_needs_the_agent():
     from privacy_agent.scan import ui_scan
     rows = list(ui_scan("email", "a@example.com", "", True, dispatch_fn=fake_dispatch, entries=[], routes={}))
     assert "agentic audit" in rows[-1][3]
+
+
+def test_could_not_check_lists_the_site_names():
+    from privacy_agent.merge import merge_findings
+    from privacy_agent.scan import render_cards_html
+    from privacy_agent.tools.userscan import parse_rows
+    rows = [{"status": "Error", "site_name": "BlockedSite", "category": "c", "url": "https://b.example"},
+            {"status": "Skipped", "site_name": "LoudSite", "category": "c", "url": "https://l.example"},
+            {"status": "Registered", "site_name": "Ok", "category": "c", "url": "https://o.example", "extra": {}}]
+    d = parse_rows(rows, "email")
+    assert d["error_sites"] == ["BlockedSite"] and d["skipped_sites"] == ["LoudSite"]
+    html = render_cards_html(merge_findings(email_scan=result("ok", d, "user-scanner")))
+    assert "BlockedSite" in html and "LoudSite" in html and "<details>" in html
+
+
+def test_agent_extras_counts_checklist_and_shows_every_draft():
+    from privacy_agent.scan import agent_extras
+    entries = [{"category": "lookup_service", "name": "A", "needs_captcha": True},
+               {"category": "lookup_service", "name": "B", "opt_out_email": "x@example.com"},
+               {"category": "lookup_service", "name": "C"}]
+    ev = [{"type": "observation", "name": "draft_erasure_request",
+           "result": {"status": "ok", "data": {"platform": "8fit.com", "body": "BODY-8FIT"}}},
+          {"type": "observation", "name": "draft_erasure_request",
+           "result": {"status": "ok", "data": {"platform": "deezer.com", "body": "BODY-DEEZER"}}}]
+    out = agent_extras(ev, entries)
+    assert "all 3 OSINT lookup sites" in out and "BODY-8FIT" in out and "BODY-DEEZER" in out
+    assert "nothing was sent" in out
+    assert "Drafts the agent" not in agent_extras([], entries)
