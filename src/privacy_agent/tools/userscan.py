@@ -81,15 +81,26 @@ def parse_rows(rows: list[dict], kind: str) -> dict:
     return {"hits": hits[:MAX_HITS], "hit_count": len(hits), **counts}
 
 
+def _why(proc, value: str) -> str:
+    """Last line of the scanner's own error output, with the scanned value removed, capped."""
+    lines = [ln.strip() for ln in (getattr(proc, "stderr", "") or "").splitlines() if ln.strip()]
+    if not lines:
+        return f" (exit code {getattr(proc, 'returncode', '?')}, no error text)"
+    return " (" + lines[-1].replace(value, "<value>")[:200] + ")"
+
+
 def _run(flag: str, value: str, include_loud: bool) -> list[dict]:
     with tempfile.TemporaryDirectory() as tmp:
         out = os.path.join(tmp, "out.json")
         cmd = [sys.executable, "-m", "user_scanner", flag, value, "-f", "json", "-o", out]
         if include_loud:
             cmd.append("--allow-loud")
-        subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT_S, check=False)
+        # Windows consoles default to cp1252 and crash on the emoji user-scanner prints when piped.
+        env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
+        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                              timeout=TIMEOUT_S, check=False, env=env)
         if not os.path.exists(out):
-            raise RuntimeError("user-scanner produced no JSON output")
+            raise RuntimeError("user-scanner produced no JSON output" + _why(proc, value))
         with open(out, encoding="utf-8") as fh:
             rows = json.load(fh)
     if not isinstance(rows, list):

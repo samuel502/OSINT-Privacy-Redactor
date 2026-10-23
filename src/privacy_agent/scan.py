@@ -185,4 +185,5 @@ def ui_scan(mode, email, username, own, dispatch_fn=dispatch, entries=None, rout
                 b = ev["bundle"]
                 yield ("\n".join(trace), b["report_md"], render_optout(entries), "", write_files(b))
     except ValueError as e:
-        yield (f"**Error:** {e}", "", "", "", None)
+        msg = f"### Cannot start the scan\n\n**{e}**"
+        yield (msg, msg, "", "", None)

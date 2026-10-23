@@ -108,4 +108,4 @@ def test_ui_scan_always_yields_five_values_and_files_last():
 def test_ui_scan_error_row_has_five_values():
     from privacy_agent.scan import UI_OUTPUTS, ui_scan
     rows = list(ui_scan("email", "a@example.com", "", False, dispatch_fn=fake_dispatch, entries=[], routes={}))
-    assert len(rows) == 1 and len(rows[0]) == UI_OUTPUTS and rows[0][0].startswith("**Error:**")
+    assert len(rows) == 1 and len(rows[0]) == UI_OUTPUTS and rows[0][0].startswith("### Cannot start")

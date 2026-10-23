@@ -96,3 +96,19 @@ def test_missing_package_is_unavailable_not_empty(monkeypatch):
     monkeypatch.setattr(userscan, "_installed", lambda: False)
     r = userscan.email_scan("sample@example.com")
     assert r["status"] == "unavailable" and r["data"] == {}
+
+
+def test_no_json_error_names_the_scanners_own_message_and_hides_the_value(monkeypatch):
+    import subprocess
+    from privacy_agent.tools import userscan
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen["env"] = kw["env"]
+        return subprocess.CompletedProcess(cmd, 1, "", "UnicodeEncodeError for me@example.com in charmap\n")
+    monkeypatch.setattr(userscan, "_installed", lambda: True)
+    monkeypatch.setattr(userscan.subprocess, "run", fake_run)
+    r = userscan.email_scan("me@example.com")
+    assert r["status"] == "error"
+    assert "UnicodeEncodeError" in r["error"] and "me@example.com" not in r["error"]
+    assert seen["env"]["PYTHONUTF8"] == "1"
