@@ -377,3 +377,13 @@ def test_agent_extras_counts_checklist_and_shows_every_draft():
     assert "all 3 OSINT lookup sites" in out and "BODY-8FIT" in out and "BODY-DEEZER" in out
     assert "nothing was sent" in out
     assert "Drafts the agent" not in agent_extras([], entries)
+
+
+def test_agent_extras_names_breached_services_with_no_draft():
+    from privacy_agent.scan import agent_extras
+    ev = [{"type": "observation", "name": "breach_lookup",
+           "result": {"status": "ok", "data": {"breaches": [{"name": "8fit"}, {"name": "Deezer"}]}}},
+          {"type": "observation", "name": "draft_erasure_request",
+           "result": {"status": "ok", "data": {"platform": "8fit.com", "body": "B"}}}]
+    out = agent_extras(ev, [])
+    assert "No draft was made for:** Deezer" in out and "8fit," not in out

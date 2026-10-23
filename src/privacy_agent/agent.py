@@ -34,6 +34,7 @@ Final answer: plain language, under 200 words, no tables, no code blocks. Three 
 2. What to do next: a numbered list of at most 4 steps, only these kinds:
    - Opt out of the OSINT lookup sites: tell the user to open the "Opt-out checklist" tab, and name up to 3 sites from your search_playbooks results with whether each is verified or researched, not tested.
    - If you called draft_erasure_request for a breached service, say which service. The app prints every draft under your answer; the user sends them themselves. Draft one for EACH breached service.
+   - For a site whose route is a written email, say its card in the "Opt-out checklist" tab has a copy-paste draft. Do not say "the draft below" for it.
    - Re-run later (without a VPN) for the sites that errored.
    Never tell the user to send requests to, delete, or close the accounts email_scan found, and never mention a draft you did not produce.
 3. Could not check: one line with the counts of errors and skipped sites.

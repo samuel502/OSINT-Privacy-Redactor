@@ -525,6 +525,16 @@ def agent_extras(events: list, entries: list) -> str:
     drafts = [e["result"]["data"] for e in events
               if e.get("type") == "observation" and e.get("name") == "draft_erasure_request"
               and e["result"].get("status") == "ok"]
+    breached = [b.get("name") if isinstance(b, dict) else str(b)
+                for e in events if e.get("type") == "observation" and e.get("name") == "breach_lookup"
+                and e["result"].get("status") == "ok"
+                for b in (e["result"].get("data") or {}).get("breaches", [])]
+    platforms = " ".join(d["platform"].lower() for d in drafts)
+    missing = [b for b in breached if b and "".join(c for c in b.lower() if c.isalnum()) not in
+               "".join(c for c in platforms if c.isalnum())]
+    if missing:
+        out.append("\n\n**No draft was made for:** " + ", ".join(missing) +
+                   ". Run the agentic audit again if you want one.")
     if drafts:
         out.append("\n\n**Drafts the agent produced** (nothing was sent; you send them yourself):")
         for d in drafts:
