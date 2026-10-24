@@ -26,13 +26,10 @@ MODES = ("email", "username", "both")
 PLAYBOOKS = Path(__file__).resolve().parent / "data" / "playbooks.json"
 
 
-def validate_scan_inputs(mode: str, email: str, username: str, own: bool) -> tuple[str | None, str | None]:
+def validate_scan_inputs(mode: str, email: str, username: str) -> tuple[str | None, str | None]:
     """Return (clean_email, clean_username). Raises ValueError with a message safe to show."""
     if mode not in MODES:
         raise ValueError("Choose a mode: email, username or both.")
-    if not own:
-        raise ValueError("Please tick the box to confirm this is your own email or username. "
-                         "This tool is for checking yourself.")
     clean_email = clean_user = None
     if mode in ("email", "both"):
         clean_email = validate_email(email)
@@ -87,9 +84,9 @@ def pivot_usernames(email_res: dict | None, already: list | None = None, limit: 
     return out[:limit]
 
 
-def run_scan(mode: str, email: str, username: str, own: bool, dispatch_fn=dispatch, routes=None, pivot: bool = False):
+def run_scan(mode: str, email: str, username: str, dispatch_fn=dispatch, routes=None, pivot: bool = False):
     """Generator: {"type": "step", "text"} events, then one {"type": "bundle", "bundle"}."""
-    clean_email, clean_user = validate_scan_inputs(mode, email, username, own)
+    clean_email, clean_user = validate_scan_inputs(mode, email, username)
     ctx = {"email": clean_email or "", "jurisdiction": "other"}
     email_res = breach_res = profiles_res = None
     user_res = []
@@ -453,13 +450,13 @@ def write_files(bundle: dict) -> list:
     return [md, js]
 
 
-def ui_scan(mode, email, username, own, pivot=False, dispatch_fn=dispatch, entries=None, routes=None):
+def ui_scan(mode, email, username, pivot=False, dispatch_fn=dispatch, entries=None, routes=None):
     """Yields 5-tuples: (trace, report, checklist, drafts, files)."""
     entries = load_entries() if entries is None else entries
     routes = load_routes() if routes is None else routes
     trace = []
     try:
-        for ev in run_scan(mode, email, username, own, dispatch_fn=dispatch_fn, routes=routes, pivot=pivot):
+   for ev in run_scan(mode, email, username, dispatch_fn=dispatch_fn, routes=routes, pivot=pivot):
             if ev["type"] == "step":
                 trace.append("- " + ev["text"])
                 t = "\n".join(trace)
