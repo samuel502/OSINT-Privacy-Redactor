@@ -34,7 +34,7 @@ Every tool returns one shape (`status: ok | unavailable | error`). `unavailable`
 - **The model never sees or chooses the email.** The agent injects it into tool calls. Tool results reach the model, not the address.
 - **Untrusted text is filtered.** Profile fields from third-party sites are whitelisted and length-capped before they reach the model. Bios and free text are dropped, because they could contain instructions aimed at the model.
 - **Password-reset-triggering sites are skipped by default**, because checking them can send the target a notification email.
-- **Intended for your own address.** There is no ownership gate (anyone could type a confirmation), so the UI and this README state the intended use. Looking up other people is out of scope.
+- **Intended for your own address.** The app has no ownership check, because nobody can prove ownership of an address by ticking a box. The UI and this README state the intended use instead: addresses and usernames you own or have permission to check. Looking up other people is out of scope for this project.
 - **No fabricated results.** Nothing is padded, defaulted or guessed. Unverified playbook entries are labelled.
 - **Human in the loop.** Erasure requests are drafts. The tool never reads your mailbox, and you click any confirmation links yourself. It does not solve CAPTCHAs.
 
