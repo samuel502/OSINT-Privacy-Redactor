@@ -69,6 +69,7 @@ def test_footprint_second_pass_recovers_unresolved_sites(monkeypatch):
     monkeypatch.setattr(footprint, "_run_runner", fake)
     monkeypatch.setattr(footprint, "_gravatar", lambda _: False)
     monkeypatch.setattr(footprint, "PASS_PAUSE_S", 0)
+    monkeypatch.setattr(footprint, "MAX_PASSES", 2)
     d = footprint.footprint_probe("a@b.com")["data"]
     assert len(calls) == 2 and "about.me" in d["confirmed_accounts"]
     assert d["rate_limited_or_unchecked"] == []
