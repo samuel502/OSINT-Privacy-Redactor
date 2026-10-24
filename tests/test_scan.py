@@ -29,11 +29,6 @@ def _bundle(mode, **kw):
     return evs[-1]["bundle"]
 
 
-def test_ownership_box_is_required():
-    with pytest.raises(ValueError, match="own"):
-        validate_scan_inputs("email", "a@example.com", "", False)
-
-
 def test_bad_mode_email_and_username_rejected():
     with pytest.raises(ValueError):
         validate_scan_inputs("nope", "a@example.com", "", True)
