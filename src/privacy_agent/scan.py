@@ -456,7 +456,7 @@ def ui_scan(mode, email, username, pivot=False, dispatch_fn=dispatch, entries=No
     routes = load_routes() if routes is None else routes
     trace = []
     try:
-   for ev in run_scan(mode, email, username, dispatch_fn=dispatch_fn, routes=routes, pivot=pivot):
+        for ev in run_scan(mode, email, username, dispatch_fn=dispatch_fn, routes=routes, pivot=pivot):
             if ev["type"] == "step":
                 trace.append("- " + ev["text"])
                 t = "\n".join(trace)
