@@ -23,7 +23,7 @@ def fake_dispatch(name, args, ctx):
 
 
 def _bundle(mode, **kw):
-    evs = list(run_scan(mode, kw.get("email", "a@example.com"), kw.get("username", "samplehandle"), True,
+    evs = list(run_scan(mode, kw.get("email", "a@example.com"), kw.get("username", "samplehandle"),
                         dispatch_fn=fake_dispatch, routes={}))
     assert evs[-1]["type"] == "bundle"
     return evs[-1]["bundle"]
@@ -31,13 +31,13 @@ def _bundle(mode, **kw):
 
 def test_bad_mode_email_and_username_rejected():
     with pytest.raises(ValueError):
-        validate_scan_inputs("nope", "a@example.com", "", True)
+        validate_scan_inputs("nope", "a@example.com", "")
     with pytest.raises(ValueError):
-        validate_scan_inputs("email", "not-an-email", "", True)
+        validate_scan_inputs("email", "not-an-email", "")
     with pytest.raises(ValueError):
-        validate_scan_inputs("username", "", "", True)
+        validate_scan_inputs("username", "", "")
     with pytest.raises(ValueError):
-        validate_scan_inputs("username", "", "-rf", True)
+        validate_scan_inputs("username", "", "-rf")
 
 
 def test_email_mode_runs_email_and_breach_only():
@@ -61,13 +61,13 @@ def test_both_mode_labels_and_caveats():
 def test_failed_check_is_not_shown_as_nothing_found():
     def bad(name, args, ctx):
         return result("error", source="x", error="Timed out") if name == "email_scan" else fake_dispatch(name, args, ctx)
-    b = list(run_scan("email", "a@example.com", "", True, dispatch_fn=bad, routes={}))[-1]["bundle"]
+    b = list(run_scan("email", "a@example.com", "", dispatch_fn=bad, routes={}))[-1]["bundle"]
     assert "Could not check" in b["report_md"] and "Timed out" in b["report_md"]
     assert "None found among the sites that answered" not in b["report_md"]
 
 
 def test_email_is_not_in_step_text_for_model_free_path_json_raw_only():
-    evs = list(run_scan("email", "a@example.com", "", True, dispatch_fn=fake_dispatch, routes={}))
+    evs = list(run_scan("email", "a@example.com", "", dispatch_fn=fake_dispatch, routes={}))
     assert all("a@example.com" not in e["text"] for e in evs if e["type"] == "step")
 
 
@@ -94,7 +94,7 @@ def test_key_status_masks_and_never_shows_full_key():
 
 def test_ui_scan_always_yields_five_values_and_files_last():
     from privacy_agent.scan import UI_OUTPUTS, ui_scan
-    rows = list(ui_scan("both", "a@example.com", "samplehandle", True, dispatch_fn=fake_dispatch,
+    rows = list(ui_scan("both", "a@example.com", "samplehandle", dispatch_fn=fake_dispatch,
                         entries=[], routes={}))
     assert all(len(r) == UI_OUTPUTS for r in rows)
     last = rows[-1]
@@ -104,7 +104,7 @@ def test_ui_scan_always_yields_five_values_and_files_last():
 
 def test_ui_scan_error_row_has_five_values():
     from privacy_agent.scan import UI_OUTPUTS, ui_scan
-    rows = list(ui_scan("email", "a@example.com", "", False, dispatch_fn=fake_dispatch, entries=[], routes={}))
+    rows = list(ui_scan("email", "not-an-email", "", dispatch_fn=fake_dispatch, entries=[], routes={}))
     assert len(rows) == 1 and len(rows[0]) == UI_OUTPUTS and rows[0][0].startswith("### Cannot start")
 
 
@@ -174,12 +174,12 @@ def test_pivot_runs_username_scan_for_found_handles_and_adds_profile_link():
                        "label": "possible_match", "source": "user-scanner"}],
              "hit_count": 1, "checked": 1, "absent": 0, "errors": 0, "skipped": 0}
         return result("ok", d, "user-scanner")
-    b = list(run_scan("email", "a@example.com", "", True, dispatch_fn=disp, routes={}, pivot=True))[-1]["bundle"]
+    b = list(run_scan("email", "a@example.com", "", dispatch_fn=disp, routes={}, pivot=True))[-1]["bundle"]
     assert ("username_scan", "sample_handle") in calls
     assert 'href="https://site0.example/u/sample_handle"' in b["report_html"]
     assert "profile page found by username" in b["report_html"]
     calls.clear()
-    list(run_scan("email", "a@example.com", "", True, dispatch_fn=disp, routes={}, pivot=False))
+    list(run_scan("email", "a@example.com", "", dispatch_fn=disp, routes={}, pivot=False))
     assert not any(n == "username_scan" for n, _ in calls)
 
 
@@ -192,7 +192,7 @@ def test_pivot_skipped_when_email_scan_failed():
         if name == "breach_lookup":
             return result("ok", {"breaches": []}, "x")
         raise AssertionError("username_scan must not run")
-    list(run_scan("email", "a@example.com", "", True, dispatch_fn=disp, routes={}, pivot=True))
+    list(run_scan("email", "a@example.com", "", dispatch_fn=disp, routes={}, pivot=True))
 
 
 def test_header_stats_profile_links_and_account_row():
@@ -342,7 +342,7 @@ def test_unsupported_verified_claim_is_flagged_but_negations_are_not():
 
 def test_plain_scan_tells_the_user_the_summary_tab_needs_the_agent():
     from privacy_agent.scan import ui_scan
-    rows = list(ui_scan("email", "a@example.com", "", True, dispatch_fn=fake_dispatch, entries=[], routes={}))
+    rows = list(ui_scan("email", "a@example.com", "", dispatch_fn=fake_dispatch, entries=[], routes={}))
     assert "agentic audit" in rows[-1][3]
 
 
