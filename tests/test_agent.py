@@ -13,20 +13,20 @@ def fake_dispatch_factory(log):
 def test_loop_runs_tools_then_finishes_and_feeds_observations_back():
     log = []
     backend = ScriptedBackend([
-        ModelTurn(calls=[ToolCall("footprint_probe"), ToolCall("breach_lookup")]),
+        ModelTurn(calls=[ToolCall("email_scan"), ToolCall("breach_lookup")]),
         ModelTurn(calls=[ToolCall("search_playbooks", {"query": "github.com"})]),
         ModelTurn(text="Plan: delete GitHub."),
     ])
     events = list(run_agent("me@example.com", "gdpr", backend, dispatch_fn=fake_dispatch_factory(log)))
     assert [e["type"] for e in events].count("tool_call") == 3
     assert events[-1] == {"type": "final", "step": 3, "text": "Plan: delete GitHub."}
-    assert len(backend.seen) == 2 and backend.seen[0][0][1]["data"]["echo"] == "footprint_probe"
+    assert len(backend.seen) == 2 and backend.seen[0][0][1]["data"]["echo"] == "email_scan"
 
 
 def test_email_is_pinned_and_not_sent_to_the_model():
     log = []
     backend = ScriptedBackend([
-        ModelTurn(calls=[ToolCall("footprint_probe", {"email": "victim@other.com"})]),
+        ModelTurn(calls=[ToolCall("email_scan", {"email": "victim@other.com"})]),
         ModelTurn(text="done"),
     ])
     list(run_agent("me@example.com", "gdpr", backend, dispatch_fn=fake_dispatch_factory(log)))
