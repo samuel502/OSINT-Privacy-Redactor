@@ -133,7 +133,7 @@ def run_agent(email: str, jurisdiction: str, backend, max_steps: int = 14,
                        **({"forced": True} if last else {})}
                 return
             results = []
-        for i, call in enumerate(turn.calls)::
+        for i, call in enumerate(turn.calls):
                 yield {"type": "tool_call", "step": step, "name": call.name, "args": call.args}
                 key = (call.name, json.dumps(call.args, sort_keys=True, default=str))
                 if key in cache:
