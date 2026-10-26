@@ -4,8 +4,11 @@ from __future__ import annotations
 import json
 
 from .llm import LLMError
-from .schema import validate_email
-from .tools import dispatch
+from .schema import result, validate_email
+from .tools import DECLARATIONS, dispatch
+
+ # The only tools the model may call. Anything else is refused in code, whatever the prompt says.
+ ALLOWED_TOOLS = {d["name"] for d in DECLARATIONS}
 
 SYSTEM_PROMPT = """You are a privacy-audit assistant. The user is checking THEIR OWN email address. They want \
 (1) to know what is findable about it (accounts, breaches) and (2) which OSINT lookup sites expose it and \
