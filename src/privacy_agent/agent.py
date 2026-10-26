@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+
 from .llm import LLMError
 from .schema import result, validate_email
 from .tools import DECLARATIONS, dispatch
@@ -108,7 +109,7 @@ def run_agent(email: str, jurisdiction: str, backend, max_steps: int = 14,
     """Generator of event dicts: model / tool_call / observation / final / error."""
     email = validate_email(email)
     ctx = {"email": email, "jurisdiction": jurisdiction, "full_name": full_name}
-    cached: dict = {}
+    cache: dict = {}
     used: dict = {}
     try:
         backend.start(SYSTEM_PROMPT,
@@ -133,7 +134,7 @@ def run_agent(email: str, jurisdiction: str, backend, max_steps: int = 14,
                        **({"forced": True} if last else {})}
                 return
             results = []
-        for i, call in enumerate(turn.calls):
+            for i, call in enumerate(turn.calls):
                 yield {"type": "tool_call", "step": step, "name": call.name, "args": call.args}
                 key = (call.name, json.dumps(call.args, sort_keys=True, default=str))
                 if key in cache:
@@ -142,7 +143,7 @@ def run_agent(email: str, jurisdiction: str, backend, max_steps: int = 14,
                     obs = result("error", source=str(call.name)[:40], error="Tool not allowed.")
                     cache[key] = obs
                 elif why := ("Too many tool calls in one turn." if i >= MAX_CALLS_PER_TURN
-                            else blocked_reason(call, cache, used)):
+                             else blocked_reason(call, cache, used)):
                     obs = result("error", source=call.name, error=why)  # not cached: it never ran
                 else:
                     used[call.name] = used.get(call.name, 0) + 1
