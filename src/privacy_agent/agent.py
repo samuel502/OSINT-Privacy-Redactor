@@ -2,13 +2,48 @@
 from __future__ import annotations
 
 import json
-
+import re
 from .llm import LLMError
 from .schema import result, validate_email
 from .tools import DECLARATIONS, dispatch
 
- # The only tools the model may call. Anything else is refused in code, whatever the prompt says.
+# The only tools the model may call. Anything else is refused in code, whatever the prompt says.
 ALLOWED_TOOLS = {d["name"] for d in DECLARATIONS}
+
+MAX_CALLS_PER_TURN = 6
+MAX_USERNAME_SCANS = 2
+MAX_DRAFTS = 8
+_DOMAIN_RE = re.compile(r"(?:https?://)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+/?")
+
+
+def _squash(s) -> str:
+    return "".join(c for c in str(s).lower() if c.isalnum())
+
+
+def blocked_reason(call, cache: dict, used: dict) -> str | None:
+    """Rules the prompt only asks for, enforced in code. Returns why a call is refused, or None."""
+    args = call.args or {}
+    if call.name == "username_scan":
+        if used.get("username_scan", 0) >= MAX_USERNAME_SCANS:
+            return "Username scan limit reached for this run."
+        reported = {str((h.get("details") or {}).get("username", "")).lower()
+                    for (n, _), r in cache.items() if n == "email_scan" and r.get("status") == "ok"
+                    for h in (r.get("data") or {}).get("hits", []) if isinstance(h, dict)} - {""}
+        if str(args.get("username", "")).strip().lstrip("@").lower() not in reported:
+            return "That username was not reported by email_scan, so it is not scanned."
+    if call.name == "draft_erasure_request":
+        if used.get("draft_erasure_request", 0) >= MAX_DRAFTS:
+            return "Draft limit reached for this run."
+        domain = str(args.get("platform_domain", "")).strip().lower()
+        if not _DOMAIN_RE.fullmatch(domain):
+            return "Not a plain domain name."
+        label = _squash(re.sub(r"^(https?://)?(www\.)?", "", domain).split(".")[0])
+        breached = [_squash(b) for (n, _), r in cache.items()
+                    if n == "breach_lookup" and r.get("status") == "ok"
+                    for b in (r.get("data") or {}).get("breaches", [])]
+        if not any(len(label) >= 3 and len(b) >= 3 and (label in b or b in label) for b in breached):
+            return "Drafts are only made for services that appeared in the breach result."
+    return None
 
 SYSTEM_PROMPT = """You are a privacy-audit assistant. The user is checking THEIR OWN email address. They want \
 (1) to know what is findable about it (accounts, breaches) and (2) which OSINT lookup sites expose it and \
@@ -73,7 +108,8 @@ def run_agent(email: str, jurisdiction: str, backend, max_steps: int = 14,
     """Generator of event dicts: model / tool_call / observation / final / error."""
     email = validate_email(email)
     ctx = {"email": email, "jurisdiction": jurisdiction, "full_name": full_name}
-    cache: dict = {}
+    cached: dict = {}
+    used: dict = {}
     try:
         backend.start(SYSTEM_PROMPT,
                       f"Check my own email address. My legal jurisdiction: {jurisdiction}. "
@@ -97,7 +133,7 @@ def run_agent(email: str, jurisdiction: str, backend, max_steps: int = 14,
                        **({"forced": True} if last else {})}
                 return
             results = []
-            for call in turn.calls:
+        for i, call in enumerate(turn.calls)::
                 yield {"type": "tool_call", "step": step, "name": call.name, "args": call.args}
                 key = (call.name, json.dumps(call.args, sort_keys=True, default=str))
                 if key in cache:
