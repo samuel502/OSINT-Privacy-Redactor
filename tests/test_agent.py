@@ -160,3 +160,14 @@ def test_run_agent_gives_the_model_the_facts_after_tools_run():
         return result("ok", {"breaches": [{"name": "SampleBreach"}]}, "x")
     list(run_agent("me@example.com", "gdpr", backend, dispatch_fn=disp))
     assert any("SampleBreach" in n and "FACTS" in n for n in backend.notes)
+    
+def test_undeclared_tool_is_refused_in_code():
+    log = []
+    backend = ScriptedBackend([
+        ModelTurn(calls=[ToolCall("footprint_probe"), ToolCall("made_up_tool")]),
+        ModelTurn(text="done"),
+    ])
+    events = list(run_agent("me@example.com", "gdpr", backend, dispatch_fn=fake_dispatch_factory(log)))
+    assert log == []  # the dispatcher was never reached
+    obs = [e for e in events if e["type"] == "observation"]
+    assert [o["result"]["status"] for o in obs] == ["error", "error"]
