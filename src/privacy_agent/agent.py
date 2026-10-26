@@ -102,6 +102,9 @@ def run_agent(email: str, jurisdiction: str, backend, max_steps: int = 14,
                 key = (call.name, json.dumps(call.args, sort_keys=True, default=str))
                 if key in cache:
                     obs = {**cache[key], "note": "Repeated call: returning cached result."}
+                elif call.name not in ALLOWED_TOOLS:
+                    obs = result("error", source=str(call.name)[:40], error="Tool not allowed.")
+                    cache[key] = obs
                 else:
                     obs = dispatch_fn(call.name, call.args, ctx)
                     cache[key] = obs
