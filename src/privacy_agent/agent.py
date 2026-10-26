@@ -105,7 +105,11 @@ def run_agent(email: str, jurisdiction: str, backend, max_steps: int = 14,
                 elif call.name not in ALLOWED_TOOLS:
                     obs = result("error", source=str(call.name)[:40], error="Tool not allowed.")
                     cache[key] = obs
+                elif why := ("Too many tool calls in one turn." if i >= MAX_CALLS_PER_TURN
+                            else blocked_reason(call, cache, used)):
+                    obs = result("error", source=call.name, error=why)  # not cached: it never ran
                 else:
+                    used[call.name] = used.get(call.name, 0) + 1
                     obs = dispatch_fn(call.name, call.args, ctx)
                     cache[key] = obs
                 yield {"type": "observation", "step": step, "name": call.name, "result": obs}
