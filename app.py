@@ -47,7 +47,10 @@ def audit_agent(email, full_name, jurisdiction, provider, api_key):
 # Every 30 min, delete copies older than 1 h; Gradio also clears this cache when the server restarts.
 DELETE_CACHE = (1800, 3600)
 
-with gr.Blocks(title="OSINT Privacy Redactor", theme=gr.themes.Soft(), delete_cache=DELETE_CACHE) as demo:
+# Gradio 6 takes the theme in launch(), not Blocks(). Shared with the Colab notebook's launch call.
+THEME = gr.themes.Soft()
+
+with gr.Blocks(title="OSINT Privacy Redactor", delete_cache=DELETE_CACHE) as demo:
     gr.HTML(banner_html())
     gr.Markdown("Check **your own** email or username: which accounts and breaches show up, "
                 "and how to opt out of OSINT lookup sites. Lookups run from this machine and send your "
@@ -94,4 +97,4 @@ with gr.Blocks(title="OSINT Privacy Redactor", theme=gr.themes.Soft(), delete_ca
     run_agent_btn.click(audit_agent, [email, full_name, jurisdiction, provider, api_key], outs)
 
 if __name__ == "__main__":
-    demo.launch(**share_settings())  # refuses to start a public link without a login
+    demo.launch(theme=THEME, **share_settings())  # refuses to start a public link without a login
