@@ -1,3 +1,5 @@
+import json
+
 from privacy_agent.agent import format_event, run_agent
 from privacy_agent.llm import ModelTurn, ScriptedBackend, ToolCall
 from privacy_agent.schema import result
@@ -20,7 +22,8 @@ def test_loop_runs_tools_then_finishes_and_feeds_observations_back():
     events = list(run_agent("me@example.com", "gdpr", backend, dispatch_fn=fake_dispatch_factory(log)))
     assert [e["type"] for e in events].count("tool_call") == 3
     assert events[-1] == {"type": "final", "step": 3, "text": "Plan: delete GitHub."}
-    assert len(backend.seen) == 2 and backend.seen[0][0][1]["data"]["echo"] == "email_scan"
+    first = backend.seen[0][0][1]  # marked string: header line, JSON body, end marker
+    assert len(backend.seen) == 2 and json.loads(first.splitlines()[1])["data"]["echo"] == "email_scan"
 
 
 def test_email_is_pinned_and_not_sent_to_the_model():

@@ -5,6 +5,7 @@ Uses the free XposedOrNot API (no key). Free tier is roughly 1 request/second.
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -13,6 +14,9 @@ from ..schema import result, validate_email
 
 BASE = "https://api.xposedornot.com/v1/check-email/"
 SOURCE = "xposedornot.com"
+# Breach names are third-party text (security-framework.md section 1): short, plain names only.
+MAX_BREACHES = 100
+_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._&'()+-]{0,59}")
 
 
 def _flatten(x):
@@ -40,5 +44,15 @@ def breach_lookup(email: str) -> dict:
     except Exception as e:  # noqa: BLE001
         return result("unavailable", source=SOURCE, error=f"Could not reach API: {e}")
 
-    names = sorted(set(_flatten(body.get("breaches"))))
-    return result("ok", {"breach_count": len(names), "breaches": names}, SOURCE)
+    if not isinstance(body, dict) or "breaches" not in body:
+        # A 200 we do not understand is not "no breaches".
+        return result("error", source=SOURCE, error="Unexpected response shape from the breach API.")
+    raw = sorted(set(_flatten(body.get("breaches"))))
+    names = [n for n in raw if _NAME_RE.fullmatch(n)]
+    dropped = len(raw) - len(names)
+    note = None
+    if len(names) > MAX_BREACHES:
+        note = f"{len(names)} breaches; only the first {MAX_BREACHES} are listed."
+    if dropped:
+        note = (note + " " if note else "") + f"{dropped} breach name(s) had unexpected characters and were dropped."
+    return result("ok", {"breach_count": len(names), "breaches": names[:MAX_BREACHES]}, SOURCE, note=note)

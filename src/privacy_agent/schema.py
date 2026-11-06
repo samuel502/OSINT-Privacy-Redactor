@@ -15,6 +15,37 @@ def validate_email(email: str) -> str:
     return email
 
 
+# ---------------------------------------------------------------- output safety
+# Model text and third-party text are rendered as Markdown (Gradio) or printed to a terminal.
+
+_MD_SPECIAL = re.compile(r"([\\`*_{}\[\]<>()#+!|~])")
+_CTRL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+def md_safe(text) -> str:
+    """Model-written Markdown, made inert: no raw HTML and no images (an image URL is fetched
+    by the browser, so it could carry data out). Ordinary links and formatting stay."""
+    s = str(text or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return re.sub(r"!(?=\s*\[)", r"\\!", s)
+
+
+def md_escape(text) -> str:
+    """Third-party text shown as literal Markdown text: no formatting, links, HTML or tables."""
+    return _MD_SPECIAL.sub(r"\\\1", str(text or "").replace("\n", " "))
+
+
+def md_fence(body: str, lang: str = "") -> str:
+    """Code block whose fence is longer than any backtick run inside, so the body cannot close it."""
+    longest = max((len(m) for m in re.findall(r"`+", body)), default=0)
+    fence = "`" * max(3, longest + 1)
+    return f"{fence}{lang}\n{body}\n{fence}"
+
+
+def strip_ctrl(text) -> str:
+    """Remove terminal control characters (ANSI escapes and similar); keeps newlines and tabs."""
+    return _CTRL.sub("", str(text or ""))
+
+
 def result(status: str, data: dict | None = None, source: str = "",
            error: str | None = None, note: str | None = None) -> dict:
     """Uniform tool output.

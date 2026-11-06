@@ -30,6 +30,28 @@ def load_env(path: Path | None = None) -> int:
     return n
 
 
+MIN_SHARE_PASSWORD = 12
+
+
+def share_settings(environ=None) -> dict:
+    """Gradio launch settings. A public share link needs a login, or we refuse to start.
+
+    Anyone with the link could otherwise run scans from this machine's IP and spend the
+    API key in .env. Credentials come from GRADIO_USERNAME / GRADIO_PASSWORD (.env or environment).
+    Raises SystemExit with a plain message (never echoing the password).
+    """
+    environ = os.environ if environ is None else environ
+    if environ.get("GRADIO_SHARE", "").lower() not in {"1", "true", "yes"}:
+        return {"share": False}
+    user = (environ.get("GRADIO_USERNAME") or "").strip()
+    pw = environ.get("GRADIO_PASSWORD") or ""
+    if not user or len(pw) < MIN_SHARE_PASSWORD:
+        raise SystemExit("GRADIO_SHARE is set but no login is configured. A share link is public, so set "
+                         f"GRADIO_USERNAME and GRADIO_PASSWORD (at least {MIN_SHARE_PASSWORD} characters) "
+                         "in .env, or unset GRADIO_SHARE.")
+    return {"share": True, "auth": (user, pw)}
+
+
 KEY_VARS = {"groq": ("GROQ_API_KEY",), "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY")}
 
 

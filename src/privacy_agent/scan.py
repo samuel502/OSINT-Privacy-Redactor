@@ -13,12 +13,13 @@ from __future__ import annotations
 import html
 import json
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from .merge import merge_findings, routes_by_domain
-from .schema import validate_email
+from .schema import md_escape, md_fence, md_safe, validate_email
 from .tools import dispatch
 from .tools.userscan import validate_username
 
@@ -127,7 +128,8 @@ def run_scan(mode: str, email: str, username: str, dispatch_fn=dispatch, routes=
 # ---------------------------------------------------------------- rendering
 
 def _cell(s, n: int = 90) -> str:
-    return str(s or "").replace("|", "/").replace("\n", " ")[:n]
+    """Third-party text in a saved Markdown table: capped, then shown literally (no links/HTML)."""
+    return md_escape(str(s or "").replace("|", "/").replace("\n", " ")[:n])
 
 
 def render_exposure(merged: dict, mode: str = "both") -> str:
@@ -158,7 +160,7 @@ def render_exposure(merged: dict, mode: str = "both") -> str:
         for a in possible:
             out.append(f"| {_cell(a['site'])} | {_cell(a['url'])} |")
     if merged["breaches"]:
-        out += ["", "### Data breaches", ", ".join(merged["breaches"])]
+        out += ["", "### Data breaches", ", ".join(md_escape(b) for b in merged["breaches"])]
     elif "breaches" in s["checks_ok"]:
         out += ["", "### Data breaches", "None found in this dataset. That is not proof the email was never exposed."]
     if merged["could_not_check"]:
@@ -207,7 +209,7 @@ def _https(u: str) -> str:
 
 
 def _link(url: str, text: str) -> str:
-    u = _https(url) or (url if url.startswith("http://") and len(url) <= 300 else "")
+    u = _https(url)  # https only: a plain-http link from a scan is not offered
     return f'<a href="{_e(u, 300)}" target="_blank" rel="noopener noreferrer nofollow">{_e(text)}</a>' if u else ""
 
 
@@ -440,8 +442,16 @@ AGENT_HINT = ("_This tab fills in only when you run the agentic audit (open the 
 UI_OUTPUTS = 5  # trace, report, opt-out checklist, erasure drafts, files
 
 
+_last_dir: list = []  # the previous run's report folder; it holds an email and raw results
+
+
 def write_files(bundle: dict) -> list:
-    d = tempfile.mkdtemp(prefix="redactor-")
+    """Write the download files. The previous run's folder is deleted first, so personal data
+    does not pile up in the temp directory (security-framework.md: sensitive data leak)."""
+    while _last_dir:
+        shutil.rmtree(_last_dir.pop(), ignore_errors=True)
+    d = tempfile.mkdtemp(prefix="redactor-")  # private (0700), unpredictable name
+    _last_dir.append(d)
     md, js = os.path.join(d, "exposure-report.md"), os.path.join(d, "exposure-report.json")
     with open(md, "w", encoding="utf-8") as f:
         f.write(bundle["report_md"])
@@ -530,12 +540,12 @@ def agent_extras(events: list, entries: list) -> str:
     missing = [b for b in breached if b and "".join(c for c in b.lower() if c.isalnum()) not in
                "".join(c for c in platforms if c.isalnum())]
     if missing:
-        out.append("\n\n**No draft was made for:** " + ", ".join(missing) +
+        out.append("\n\n**No draft was made for:** " + ", ".join(md_escape(m) for m in missing) +
                    ". Run the agentic audit again if you want one.")
     if drafts:
         out.append("\n\n**Drafts the agent produced** (nothing was sent; you send them yourself):")
         for d in drafts:
-            out.append(f"\n\n*{d['platform']}*\n\n```\n{d['body']}\n```")
+            out.append(f"\n\n*{md_escape(d['platform'])}*\n\n" + md_fence(d["body"]))
     return "".join(out)
 
 
@@ -577,6 +587,6 @@ def ui_agent(email, jurisdiction, backend, full_name=None, max_steps=14, dispatc
         note += ("> **Warning:** the agent calls a route \"verified\", but no tool result says any route was "
                  "verified. Treat those routes as researched, not tested.\n\n")
     if final and (final.get("truncated") or final.get("forced")):
-        note = ("_The agent hit its step limit, so this answer was cut short._\n\n")
+        note += "_The agent hit its step limit, so this answer was cut short._\n\n"
     yield ("\n\n".join(trace), bundle["report_html"], render_optout_html(entries),
-           note + (final["text"] if final else "") + agent_extras(events, entries), write_files(bundle))
+           note + md_safe(final["text"] if final else "") + agent_extras(events, entries), write_files(bundle))

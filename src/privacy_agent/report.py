@@ -12,6 +12,8 @@ from __future__ import annotations
 import textwrap
 from datetime import datetime, timezone
 
+from .schema import md_escape, strip_ctrl
+
 # Friendly service names. Anything missing falls back to a prettified domain.
 DISPLAY = {
     "office365.com": "Microsoft 365 / Outlook", "outlook.com": "Microsoft 365 / Outlook",
@@ -194,10 +196,12 @@ def build_report(footprint, breaches, playbooks, lookup_services, *,
         acc = fd.get("confirmed_accounts", [])
         lim = fd.get("rate_limited_or_unchecked", [])
         c = fd.get("holehe_counts", {})
-        total = c.get("registered", 0) + c.get("not_registered", 0) + c.get("rate_limited", 0)
+        err = fd.get("errored", [])  # holehe modules that crashed: also NOT checked (rule 2)
+        total = c.get("registered", 0) + c.get("not_registered", 0) + c.get("rate_limited", 0) + len(err)
         if total:
-            L.append(f"**Coverage:** {total - len(lim)} of {total} sites checked; "
-                     f"{len(lim)} were blocked by rate limits and **not checked**.")
+            L.append(f"**Coverage:** {total - len(lim) - len(err)} of {total} sites checked; "
+                     f"{len(lim)} were blocked by rate limits and **not checked**"
+                     + (f"; {len(err)} errored and were **not checked**." if err else "."))
         L += ["", f"## Accounts found ({len(acc)})"]
         if acc:
             L += ["| Service | How to remove it | Playbook status |", "|---|---|---|"]
@@ -221,7 +225,7 @@ def build_report(footprint, breaches, playbooks, lookup_services, *,
     else:
         names = breaches.get("data", {}).get("breaches", [])
         if names:
-            L.append(f"Found in **{len(names)}** known breach(es): " + ", ".join(names))
+            L.append(f"Found in **{len(names)}** known breach(es): " + ", ".join(md_escape(n) for n in names))
         else:
             L.append("No known breaches found (this is not proof of safety).")
 
@@ -278,10 +282,12 @@ def render_terminal(footprint, breaches, playbooks, lookup_services, *,
         acc = fd.get("confirmed_accounts", [])
         lim = fd.get("rate_limited_or_unchecked", [])
         c = fd.get("holehe_counts", {})
-        total = c.get("registered", 0) + c.get("not_registered", 0) + c.get("rate_limited", 0)
+        err = fd.get("errored", [])
+        total = c.get("registered", 0) + c.get("not_registered", 0) + c.get("rate_limited", 0) + len(err)
         if total:
-            L += _wrap(f"{total - len(lim)} of {total} sites probed · "
-                       f"{len(lim)} blocked by rate limits and NOT checked", W)
+            L += _wrap(f"{total - len(lim) - len(err)} of {total} sites probed · "
+                       f"{len(lim)} blocked by rate limits and NOT checked"
+                       + (f" · {len(err)} errored and NOT checked" if err else ""), W)
         if acc:
             rows = []
             for d in acc:
@@ -296,7 +302,7 @@ def render_terminal(footprint, breaches, playbooks, lookup_services, *,
         L += _wrap("The breach check could not run: " + str(breaches.get("error")), W)
     else:
         names = breaches.get("data", {}).get("breaches", [])
-        L += _wrap(f"{len(names)} known: " + ", ".join(names) if names
+        L += _wrap(f"{len(names)} known: " + ", ".join(strip_ctrl(n) for n in names) if names
                    else "none known (not proof of safety)", W)
 
     if lookup_services:

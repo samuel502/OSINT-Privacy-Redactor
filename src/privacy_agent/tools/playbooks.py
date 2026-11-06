@@ -23,6 +23,9 @@ from ..schema import result
 
 DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "playbooks.json"
 
+MAX_QUERIES = 80     # more than email_scan can return (60 hits) plus the lookup sites
+MAX_QUERY_LEN = 200
+
 _STOP = {"the", "a", "an", "of", "to", "and", "for", "in", "on", "your", "my", "site", "s", "account"}
 
 # Keys copied into a match. Single source of truth for what the report/checklist may read.
@@ -123,9 +126,14 @@ def lookup_many(queries, category=None) -> dict:
 def search_playbooks(query: str | None = None, category=None, queries=None) -> dict:
     """Single (`query`) or batched (`queries`) lookup."""
     if queries:
-        qs = [str(q) for q in queries if str(q).strip()]
+        if not isinstance(queries, (list, tuple)):
+            return result("error", source="local playbooks", error="`queries` must be a list.")
+        qs = [str(q)[:MAX_QUERY_LEN] for q in queries if str(q).strip()]
         if not qs:
             return result("error", source="local playbooks", error="Empty query list.")
+        if len(qs) > MAX_QUERIES:
+            return result("error", source="local playbooks",
+                          error=f"Too many queries ({len(qs)}); send at most {MAX_QUERIES}.")
         try:
             _index()
         except Exception as e:  # noqa: BLE001
@@ -135,7 +143,7 @@ def search_playbooks(query: str | None = None, category=None, queries=None) -> d
         flat = [m for ms in results.values() for m in ms]
         return result("ok", {"results": results, "queried": len(qs), "matched": len(flat)},
                       "local playbooks", note=_notes(flat))
-    query = (query or "").strip()
+    query = str(query or "").strip()[:MAX_QUERY_LEN]
     if not query:
         return result("error", source="local playbooks", error="Empty query.")
     try:

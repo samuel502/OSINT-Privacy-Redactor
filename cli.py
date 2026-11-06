@@ -20,7 +20,7 @@ from privacy_agent.env import load_env  # noqa: E402
 from privacy_agent.llm import LLMError, make_backend  # noqa: E402
 from privacy_agent.pipeline import LOOKUP_TARGETS, run_pipeline  # noqa: E402
 from privacy_agent.report import render_terminal  # noqa: E402
-from privacy_agent.schema import validate_email  # noqa: E402
+from privacy_agent.schema import strip_ctrl, validate_email  # noqa: E402
 
 
 def _playbook_map(routes):
@@ -30,7 +30,7 @@ def _playbook_map(routes):
 
 def _print_report(bundle, width):
     print("\n" + "=" * 70)
-    print(render_terminal(
+    print(strip_ctrl(render_terminal(
         bundle["footprint"],
         bundle["breaches"],
         _playbook_map(bundle["routes"]),
@@ -39,7 +39,7 @@ def _print_report(bundle, width):
         checklist=bundle["checklist"],
         email=bundle["email"],
         width=width,
-    ))
+    )))
 
 
 def main():
@@ -51,6 +51,7 @@ def main():
     p.add_argument("--jurisdiction", default="gdpr", choices=["gdpr", "uk_gdpr", "ccpa", "other"])
     p.add_argument("--deep", action="store_true",
                    help="Also run the fingerprint.to second source (needs playwright). "
+                        "This submits your email to fingerprint.to, itself an OSINT lookup site. "
                         "Adds ~2-3 min. Works in --agent mode too.")
     p.add_argument("--headed", action="store_true",
                    help="Show the browser window so you can clear a bot check by hand.")
@@ -81,16 +82,17 @@ def main():
             backend = make_backend(a.provider, model=a.model)
         except LLMError as e:
             sys.exit(str(e))
+        # Third-party and model text is printed with terminal control characters removed.
         for ev in run_agent(email, a.jurisdiction, backend, max_steps=a.max_steps, full_name=a.name):
-            print(format_event(ev), "\n")
+            print(strip_ctrl(format_event(ev)), "\n")
             if ev["type"] == "final":
-                print("=" * 70, "\n", ev["text"])
+                print("=" * 70, "\n", strip_ctrl(ev["text"]))
         return
 
     bundle = None
     for ev in run_pipeline(email, a.jurisdiction, a.name):
         if ev["type"] == "step":
-            print(ev["text"])
+            print(strip_ctrl(ev["text"]))
         else:
             bundle = ev["bundle"]
 

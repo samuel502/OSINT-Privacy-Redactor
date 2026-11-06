@@ -86,6 +86,21 @@ def _parse_card(card) -> dict:
     return entry
 
 
+_DOMAIN_OK = re.compile(r"[a-z0-9-]+(\.[a-z0-9-]+)+")
+
+
+def _safe_profile(e: dict) -> dict:
+    """Card text is third-party text: whitelist and cap it, drop the bio (CLAUDE.md rule 7)."""
+    from .userscan import MAX_VALUE, _clean_extra
+    domain = (e.get("domain") or "")[:80]
+    return {"domain": domain if _DOMAIN_OK.fullmatch(domain) else "",
+            "platform": str(e.get("platform") or "")[:60],
+            "username": str(e.get("username") or "")[:64],
+            "name": str(e.get("name") or "")[:MAX_VALUE],
+            "location": str(e.get("location") or "")[:MAX_VALUE],
+            "fields": _clean_extra(e.get("fields"))}
+
+
 def _wait_for_stream(page, timeout: int) -> int:
     """Results arrive one at a time. Wait until the card count stops growing."""
     deadline = time.time() + timeout
@@ -143,16 +158,20 @@ def fingerprint_probe(email: str, headed: bool | None = None,
                 continue
             if key not in best or len(e["fields"]) > len(best[key]["fields"]):
                 best[key] = e
-        profiles = sorted(best.values(), key=lambda e: (e["domain"] or e["platform"]).lower())
+        profiles = sorted((_safe_profile(e) for e in best.values()),
+                          key=lambda e: (e["domain"] or e["platform"]).lower())
         domains = sorted({e["domain"] for e in profiles if e["domain"]})
 
-        if profiles:
-            note = (f"{len(profiles)} profile(s) resolved. Fields come from fingerprint.to's "
-                    "live sweep; a matching address is a strong lead, not proof it is the "
-                    "same person.")
-        else:
-            note = ("No result cards found. If a bot check appeared, re-run with "
-                    "FINGERPRINT_HEADED=1 so you can clear it.")
+        if not profiles:
+            # Zero cards is what a bot check or a changed page looks like too: "could not tell",
+            # never "nothing found" (CLAUDE.md rule 2).
+            return result("unavailable", {"sources": {"fingerprint.to": "no result cards"}},
+                          "fingerprint.to",
+                          error="No result cards found (possibly a bot check). Not counted as 'none'. "
+                                "Re-run with FINGERPRINT_HEADED=1 to clear a bot check by hand.")
+        note = (f"{len(profiles)} profile(s) resolved. Fields come from fingerprint.to's "
+                "live sweep; a matching address is a strong lead, not proof it is the "
+                "same person.")
         return result("ok", {"profiles": profiles, "domains": domains,
                              "sources": {"fingerprint.to": "ok"}}, "fingerprint.to", note=note)
     except Exception as e:  # noqa: BLE001

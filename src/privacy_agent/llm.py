@@ -178,6 +178,9 @@ class GroqBackend:
 
     def add_tool_results(self, results) -> None:
         for call, obs in results:
+            if isinstance(obs, str):  # already marked and truncated by the agent; keep the end marker
+                self.messages.append({"role": "tool", "tool_call_id": call.id, "content": obs})
+                continue
             body = json.dumps(obs, default=str)
             if len(body) > self.MAX_OBS_CHARS:
                 body = body[: self.MAX_OBS_CHARS] + "...(truncated)"

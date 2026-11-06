@@ -31,8 +31,11 @@ The right next step depends on what earlier tools found. A handle revealed by an
 Every tool returns one shape (`status: ok | unavailable | error`). `unavailable` means "could not check", never "nothing found". Errors and skipped sites are counted and reported.
 
 ## Design decisions
-- **The model never sees or chooses the email.** The agent injects it into tool calls. Tool results reach the model, not the address.
-- **Untrusted text is filtered.** Profile fields from third-party sites are whitelisted and length-capped before they reach the model. Bios and free text are dropped, because they could contain instructions aimed at the model.
+- **The model never sees or chooses the email.** The agent injects it into tool calls. Before tool results reach the model, the email (also URL-encoded) and the full name are replaced with placeholders, including inside erasure drafts and error messages. You still see the real drafts.
+- **Your email does go to the lookup services.** That is how a lookup works: user-scanner's sites, XposedOrNot, Gravatar and GitHub receive it. `--deep` also submits it to fingerprint.to, which is itself an OSINT lookup site.
+- **Untrusted text is filtered and marked.** Profile fields, breach names and holehe/fingerprint.to hints from third-party sites are whitelisted and length-capped. Bios and free text are dropped, because they could contain instructions aimed at the model. Every tool result goes to the model inside `<untrusted-data id=…>` markers with a random per-run id, which the data cannot close. Profile details of username matches (possibly a stranger's page) are not sent to the model at all.
+- **Nothing unsafe renders.** Scan values are HTML-escaped in the cards. The model's answer is shown with raw HTML and images disabled, links only over https, and terminal output has control characters removed.
+- **No public link without a login.** `GRADIO_SHARE=1` is refused unless `GRADIO_USERNAME` and `GRADIO_PASSWORD` (12+ characters) are set.
 - **Password-reset-triggering sites are skipped by default**, because checking them can send the target a notification email.
 - **Intended for your own address.** The app has no ownership check, because nobody can prove ownership of an address by ticking a box. The UI and this README state the intended use instead: addresses and usernames you own or have permission to check. Looking up other people is out of scope for this project.
 - **No fabricated results.** Nothing is padded, defaulted or guessed. Unverified playbook entries are labelled.

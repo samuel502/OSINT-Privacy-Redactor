@@ -40,6 +40,7 @@ RUNNER = Path(__file__).with_name("_holehe_runner.py")
 RUNNER_TIMEOUT = int(os.environ.get("HOLEHE_RUNNER_TIMEOUT", "300"))
 MAX_PASSES = int(os.environ.get("HOLEHE_MAX_PASSES", "1"))
 PASS_PAUSE_S = int(os.environ.get("HOLEHE_PASS_PAUSE", "8"))
+MAX_HINT = 80
 
 
 def _env_flag(name: str) -> bool:
@@ -75,9 +76,10 @@ def _classify(records):
         else:
             absent.add(d)
         if r.get("exists"):
-            extra = {k: v for k, v in {"email_recovery": r.get("emailrecovery"),
-                                       "phone_number": r.get("phoneNumber"),
-                                       "others": r.get("others")}.items() if v}
+            # holehe's masked hints only, as short strings. Its free-form `others` dict is dropped (rule 7).
+            extra = {k: str(v)[:MAX_HINT] for k, v in {"email_recovery": r.get("emailrecovery"),
+                                                       "phone_number": r.get("phoneNumber")}.items()
+                     if isinstance(v, (str, int)) and v}
             if extra:
                 hints[d] = extra
     return confirmed, unresolved, absent, errored, hints

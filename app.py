@@ -10,7 +10,7 @@ import gradio as gr  # noqa: E402
 
 from privacy_agent.agent import format_event, run_agent  # noqa: E402
 from privacy_agent.banner import banner_html  # noqa: E402
-from privacy_agent.env import key_status, load_env  # noqa: E402
+from privacy_agent.env import key_status, load_env, share_settings  # noqa: E402
 from privacy_agent.llm import LLMError, make_backend  # noqa: E402
 from privacy_agent.scan import ui_agent, ui_scan  # noqa: E402
 
@@ -43,11 +43,17 @@ def audit_agent(email, full_name, jurisdiction, provider, api_key):
     yield from ui_agent(email, jurisdiction, backend, full_name=(full_name or "").strip() or None)
 
 
-with gr.Blocks(title="OSINT Privacy Redactor", theme=gr.themes.Soft()) as demo:
+# Gradio keeps its own copy of every download file (reports hold an email and raw results).
+# Every 30 min, delete copies older than 1 h; Gradio also clears this cache when the server restarts.
+DELETE_CACHE = (1800, 3600)
+
+with gr.Blocks(title="OSINT Privacy Redactor", theme=gr.themes.Soft(), delete_cache=DELETE_CACHE) as demo:
     gr.HTML(banner_html())
     gr.Markdown("Check **your own** email or username: which accounts and breaches show up, "
-                "and how to opt out of OSINT lookup sites. Lookups run from this machine; "
-                "your email is never sent to an LLM.")
+                "and how to opt out of OSINT lookup sites. Lookups run from this machine and send your "
+                "email or username to the services being checked (user-scanner's sites, XposedOrNot, "
+                "Gravatar, GitHub). In the agentic audit your email and name are removed from everything "
+                "sent to the LLM.")
     mode = gr.Radio([("Email", "email"), ("Username", "username"), ("Both", "both")],
                     value="email", label="What to check")
     with gr.Row():
@@ -88,4 +94,4 @@ with gr.Blocks(title="OSINT Privacy Redactor", theme=gr.themes.Soft()) as demo:
     run_agent_btn.click(audit_agent, [email, full_name, jurisdiction, provider, api_key], outs)
 
 if __name__ == "__main__":
-    demo.launch(share=os.environ.get("GRADIO_SHARE", "").lower() in {"1", "true", "yes"})
+    demo.launch(**share_settings())  # refuses to start a public link without a login
