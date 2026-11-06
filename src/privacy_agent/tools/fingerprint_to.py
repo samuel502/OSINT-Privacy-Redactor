@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import os
 import re
-import sys
 import time
 from urllib.parse import unquote, urlparse
 
@@ -186,7 +185,3 @@ def fingerprint_probe(email: str, headed: bool | None = None,
                 pass
             pw.stop()
 
-
-if __name__ == "__main__":
-    import json
-    print(json.dumps(fingerprint_probe(sys.argv[1]), indent=2, default=str))

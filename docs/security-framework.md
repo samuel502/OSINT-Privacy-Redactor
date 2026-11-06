@@ -20,7 +20,8 @@ This tool is riskier than most in one way: **it pulls text from third-party webs
 | Unwanted outbound requests | A tool is tricked into fetching an arbitrary URL | Tools only call their known services. No tool takes a free-form URL from the AI or from scan data |
 | System prompt leak | "Show me your instructions" | No secrets in the prompt. A test tries to extract it |
 | Unbounded consumption | Runaway loops, burned API calls, hammering lookup sites | Step and call limits, timeouts, polite rate limits on lookups |
-| Secret leak | Groq or other API keys in the repo or logs | Keys only from environment variables. `.env` gitignored. Secret scanner on every commit |
+| Secret leak | The Groq key in the repo, a file, logs, notebook output or a child process | The key is read only from Colab Secrets and passed to the app as an argument. It is never written to a file, printed, or put in `os.environ` (so lookup subprocesses never inherit it). No `.env` or key file exists. The page shows it masked. Secret scanner on every commit |
+| Excessive exposure | A public Gradio link lets anyone run scans from the session and spend the key | Colab only. `launch()` refuses to run outside Colab and always passes `share=False` (Gradio would otherwise share by default in Colab). No share link, login, local launcher or CLI |
 | Supply chain | OSINT libraries pull in many dependencies, some with known holes | Pinned dependencies. Dependency audit on every change |
 
 ## 2. Security built into the design
@@ -32,6 +33,7 @@ This tool is riskier than most in one way: **it pulls text from third-party webs
 - Logs never contain secrets or full personal data.
 - The opt-out checklist is a guide only. The tool never submits forms on its own.
 - The LLM provider is behind one interface, so it can be swapped.
+- One way to run it: the Colab notebook, with the user's own Groq key from Colab Secrets. Tests (`python -m pytest`) run anywhere for development.
 
 ## 3. Automated checks
 
@@ -66,6 +68,7 @@ A folder of hostile inputs with an expected safe result:
 - A request to show the system prompt
 - Very long or malformed input
 - A scan that would make the agent loop
+- A launch outside Colab, or one that would create a public link or put the key in the environment
 
 A test passes only if the report's facts are unchanged, nothing unsafe renders, no extra data leaks, and limits hold.
 

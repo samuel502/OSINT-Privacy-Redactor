@@ -81,14 +81,12 @@ def test_registry_routes_load():
     assert "emailosint.org" in load_routes()
 
 
-def test_key_status_masks_and_never_shows_full_key():
-    from privacy_agent.env import key_status, mask_key
+def test_key_line_masks_and_never_shows_full_key():
+    from app import key_line, mask_key
     k = "gsk_ABCDEFGHIJKLMNOP1234"
-    s = key_status("groq", environ={"GROQ_API_KEY": k})
-    assert "in use" in s and k not in s and s.count("1234") == 1
-    assert "No Groq key" in key_status("groq", environ={})
-    t = key_status("groq", typed=k, environ={})
-    assert "this session" in t and k not in t
+    s = key_line(k)
+    assert "in use" in s and "Colab Secrets" in s and k not in s and s.count("1234") == 1
+    assert "No Groq key" in key_line(None) and "No Groq key" in key_line("  ")
     assert mask_key("short") == "••••••••"
 
 

@@ -250,27 +250,45 @@ def _footprint_with_errors():
 
 
 def test_reports_count_errored_sites_as_not_checked():
-    from privacy_agent.report import build_report, render_terminal
+    from privacy_agent.report import build_report
     md = build_report(_footprint_with_errors(), result("ok", {"breaches": []}), {}, [])
     assert "7 of 10 sites checked" in md and "2 errored" in md
-    txt = render_terminal(_footprint_with_errors(), result("ok", {"breaches": []}), {}, [])
-    assert "7 of 10 sites probed" in txt and "2 errored" in txt
 
 
-# ---------------------------------------------------------------- step 8: no public link without a login
+# ---------------------------------------------------------------- step 8: Colab only, never a public link
 
-def test_share_link_refused_without_login():
+def test_launch_refuses_outside_colab(monkeypatch):
+    import sys
     import pytest
-    from privacy_agent.env import share_settings
-    assert share_settings({}) == {"share": False}
-    for env in ({"GRADIO_SHARE": "1"},
-                {"GRADIO_SHARE": "true", "GRADIO_USERNAME": "me"},
-                {"GRADIO_SHARE": "yes", "GRADIO_USERNAME": "me", "GRADIO_PASSWORD": "short"}):
-        with pytest.raises(SystemExit) as e:
-            share_settings(env)
-        assert "short" not in str(e.value)  # the password is never echoed
-    ok = share_settings({"GRADIO_SHARE": "1", "GRADIO_USERNAME": "me", "GRADIO_PASSWORD": "a-long-passphrase"})
-    assert ok == {"share": True, "auth": ("me", "a-long-passphrase")}
+    import app
+    monkeypatch.delitem(sys.modules, "google.colab", raising=False)
+    with pytest.raises(RuntimeError, match="Colab"):
+        app.launch("gsk_ABCDEFGHIJKLMNOP1234")
+
+
+def test_launch_in_colab_never_shares_and_keeps_key_out_of_env(monkeypatch):
+    import os
+    import sys
+    import types
+    import gradio as gr
+    import app
+    key = "gsk_ABCDEFGHIJKLMNOP1234"
+    seen = {}
+    monkeypatch.setitem(sys.modules, "google.colab", types.ModuleType("google.colab"))
+    monkeypatch.setattr(gr.Blocks, "launch", lambda self, **kw: seen.update(kw))
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    app.launch(key)
+    assert seen["share"] is False and "auth" not in seen
+    assert key not in os.environ.values()  # subprocesses never inherit the key
+
+
+def test_no_key_files_or_local_launch_paths_remain():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    for gone in (".env.example", "cli.py", "src/privacy_agent/env.py", "check_fingerprint.py"):
+        assert not (root / gone).exists(), gone
+    for f in ("app.py", "src/privacy_agent/tools/fingerprint_to.py"):
+        assert "__main__" not in (root / f).read_text(encoding="utf-8"), f
 
 
 # ---------------------------------------------------------------- step 9: old reports do not pile up
@@ -288,16 +306,17 @@ def test_previous_report_folder_is_deleted():
 
 # ---------------------------------------------------------------- Colab launch and Gradio's file cache
 
-def test_colab_notebook_launches_through_share_settings():
+def test_colab_notebook_reads_key_from_secrets_and_never_stores_it():
     from pathlib import Path
     nb = json.loads((Path(__file__).resolve().parents[1] / "notebooks" / "colab_quickstart.ipynb")
                     .read_text(encoding="utf-8"))
-    code = ["".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code"]
-    launches = [line for src in code for line in src.splitlines() if "demo.launch(" in line]
-    assert launches and all("**share_settings()" in line for line in launches)
-    assert any("GRADIO_PASSWORD" in src for src in code)  # login can come from Colab Secrets
+    code = "\n".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
+    assert "userdata.get('GROQ_API_KEY')" in code and "launch(groq_key)" in code
+    for banned in ("os.environ", "GRADIO_", "share=True", "demo.launch(", "cli.py", ".env",
+                   "print(groq_key", "open("):
+        assert banned not in code, banned
 
 
 def test_gradio_deletes_its_copies_of_report_files():
     import app
-    assert app.demo.delete_cache == app.DELETE_CACHE and all(n > 0 for n in app.DELETE_CACHE)
+    assert app.build_demo().delete_cache == app.DELETE_CACHE and all(n > 0 for n in app.DELETE_CACHE)

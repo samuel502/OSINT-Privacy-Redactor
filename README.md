@@ -1,6 +1,6 @@
 # Privacy Footprint Agent
 
-An agentic AI tool that shows what the internet can find about **your own** email address or username, then helps you plan its removal. It looks up accounts and breaches with free open-source tools, an AI model decides what to check next, and findings link to removal routes (opt-out pages and ready-to-send GDPR/CCPA drafts). It runs locally or in Google Colab with a Gradio interface and a free Groq or Gemini API key.
+An agentic AI tool that shows what the internet can find about **your own** email address or username, then helps you plan its removal. It looks up accounts and breaches with free open-source tools, an AI model decides what to check next, and findings link to removal routes (opt-out pages and ready-to-send GDPR/CCPA drafts). It runs in Google Colab with a Gradio interface and your own free Groq API key.
 
 ## Status (read this first)
 | Part | State |
@@ -12,7 +12,7 @@ An agentic AI tool that shows what the internet can find about **your own** emai
 | Erasure drafts (`draft_erasure_request`) | Built. Drafts only. |
 | Maigret username search | Planned, pending a live test. |
 | Automated opt-out (`start_optout`) | Planned. Dry-run first; the user always confirms. |
-| Single Colab notebook, sample-data mode | Planned. |
+| Single Colab notebook | Built (quickstart). Sample-data mode planned. |
 
 ## Why an agent
 The right next step depends on what earlier tools found. A handle revealed by an account can become a username search; a breached account with a known deletion route should come first; a service with no playbook needs a legal template; a check that fails must be reported, not guessed. The model chooses the tools and the order, Python runs them, and observations go back to the model until it can write the plan. The Gradio UI shows each step.
@@ -32,46 +32,26 @@ Every tool returns one shape (`status: ok | unavailable | error`). `unavailable`
 
 ## Design decisions
 - **The model never sees or chooses the email.** The agent injects it into tool calls. Before tool results reach the model, the email (also URL-encoded) and the full name are replaced with placeholders, including inside erasure drafts and error messages. You still see the real drafts.
-- **Your email does go to the lookup services.** That is how a lookup works: user-scanner's sites, XposedOrNot, Gravatar and GitHub receive it. `--deep` also submits it to fingerprint.to, which is itself an OSINT lookup site.
+- **Your email does go to the lookup services.** That is how a lookup works: user-scanner's sites, XposedOrNot, Gravatar and GitHub receive it. The optional fingerprint.to source (off by default) also submits it to fingerprint.to, which is itself an OSINT lookup site.
 - **Untrusted text is filtered and marked.** Profile fields, breach names and holehe/fingerprint.to hints from third-party sites are whitelisted and length-capped. Bios and free text are dropped, because they could contain instructions aimed at the model. Every tool result goes to the model inside `<untrusted-data id=…>` markers with a random per-run id, which the data cannot close. Profile details of username matches (possibly a stranger's page) are not sent to the model at all.
 - **Nothing unsafe renders.** Scan values are HTML-escaped in the cards. The model's answer is shown with raw HTML and images disabled, links only over https, and terminal output has control characters removed.
-- **No public link without a login.** `GRADIO_SHARE=1` is refused unless `GRADIO_USERNAME` and `GRADIO_PASSWORD` (12+ characters) are set.
+- **Colab only, no public link.** The page runs inside the notebook with `share=False`; there is no share link, login, local launcher or CLI. The Groq key comes only from Colab Secrets and is never saved.
 - **Password-reset-triggering sites are skipped by default**, because checking them can send the target a notification email.
 - **Intended for your own address.** The app has no ownership check, because nobody can prove ownership of an address by ticking a box. The UI and this README state the intended use instead: addresses and usernames you own or have permission to check. Looking up other people is out of scope for this project.
 - **No fabricated results.** Nothing is padded, defaulted or guessed. Unverified playbook entries are labelled.
 - **Human in the loop.** Erasure requests are drafts. The tool never reads your mailbox, and you click any confirmation links yourself. It does not solve CAPTCHAs.
 
-## Run locally
-Steps for Git Bash on Windows. On Mac or Linux, activate with `source .venv/bin/activate`.
-```bash
-git clone https://github.com/samuel502/OSINT-Privacy-Redactor.git && cd OSINT-Privacy-Redactor
-python -m venv .venv                  # private folder for this project's packages
-source .venv/Scripts/activate         # you should now see (.venv)
-pip install -r requirements.txt
-python app.py                         # open http://127.0.0.1:7860
-```
-The scan needs no key. Only the optional agentic audit needs a free Groq key (console.groq.com/keys).
+## Run it (Google Colab only)
+1. Open [`notebooks/colab_quickstart.ipynb`](notebooks/colab_quickstart.ipynb) in Google Colab.
+2. Get a free Groq key at console.groq.com/keys. In Colab, open **Secrets** (key icon, left sidebar), add a secret named `GROQ_API_KEY` with your key, and turn on notebook access.
+3. Run the cells in order. The page opens inside the notebook.
 
-### Saving your key safely (optional, for the agentic audit)
-The key is shown once, so copy it, then run this one line. Typing is hidden and the key never appears in
-your command history or on screen:
-```bash
-read -s -p "Paste key (hidden): " K; printf 'GROQ_API_KEY=%s\n' "$K" > .env; unset K; echo
-```
-1. `.env` is in `.gitignore`, so it is never committed. Check with `git status`: `.env` must not be listed.
-2. Never use `git add -f .env`, and never paste the key into chat, a command or a screenshot.
-3. Restart the app. The page shows a masked line such as `gsk_••••••••abcd` when a key is in use.
-4. Prefer not to use a file? Paste the key into the masked box on the page (this session only, not saved).
+The scan works without a key; only the agentic audit needs it. Your key is read from Colab Secrets when the app starts and kept in memory only: it is never written to a file, printed, or put in an environment variable. Never paste it into a cell, chat or screenshot.
 
-```bash
-python -m pytest                                              # tests, no network or key needed
-python cli.py me@example.com --tools-only                    # tools only, no LLM quota used
-python cli.py me@example.com                                 # full agent loop (--provider groq|gemini)
-```
-A VPN can make lookups fail or return blocked results. Turn it off for a fair scan.
+Some sites block cloud IP addresses, so results are a floor, not a complete list.
 
-## Run in Colab
-Open `notebooks/colab_quickstart.ipynb`, add `GROQ_API_KEY` (and/or `GEMINI_API_KEY`) to Colab Secrets, and run the cells. Some sites block cloud IP addresses, so a local run can find more.
+### Development
+`python -m pytest` runs the tests locally (no network, no key, no Colab needed).
 
 ## Add playbooks
 Edit `src/privacy_agent/data/playbooks.json`. For each service, visit its opt-out or deletion page yourself, then record `opt_out_url`, `steps_summary`, whether email confirmation is needed, `verified: true` and `last_verified`. Unverified entries stay labelled.
@@ -80,7 +60,7 @@ Edit `src/privacy_agent/data/playbooks.json`. For each service, visit its opt-ou
 - Lookups depend on third-party sites. Some block cloud IPs or rate-limit; results are a floor, not a complete list.
 - Absence on a site is not proof the email is unused there.
 - Username matches are leads, not proof.
-- Free API tiers are rate-limited. Set `GROQ_MODEL` / `GEMINI_MODEL` if a default model is unavailable.
+- Free API tiers are rate-limited.
 - Smaller open models can emit malformed tool calls; the Groq backend retries these.
 - Opt-out links go stale, which is why entries carry `last_verified`.
 - Not legal advice.

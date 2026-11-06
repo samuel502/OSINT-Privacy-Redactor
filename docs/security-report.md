@@ -81,3 +81,13 @@ Ranked by severity. Line numbers are as of this review.
 2. Run `pip-audit -r requirements.txt` and record the result here.
 3. Add CI (pytest, pip-audit, gitleaks, Bandit) and pin dependencies.
 4. Move the attack inputs into a fixtures folder and add a Promptfoo run before release.
+
+## Update, 2026-11-06: Colab-only
+
+Added after the review above, which is kept as it was. On 6 Nov 2026 the CLI was removed and the tool became Colab-only:
+
+- Removed: `cli.py`, `check_fingerprint.py`, the `__main__` entry in `fingerprint_to.py`, `src/privacy_agent/env.py` (`.env` loader, `share_settings`), `.env.example`, the Gemini backend, and the terminal renderers `render_terminal` and `render_banner`.
+- R6 (public link) no longer applies: there is no share link or login. `app.launch()` refuses to run outside Colab and always passes `share=False`.
+- The Groq key is read only from Colab Secrets in the notebook and passed to `launch()` as an argument. It is never written to a file, printed or put in `os.environ`, so lookup subprocesses do not inherit it.
+- References above to `cli.py`, `share_settings`, `.env` and `env.py` describe the code as it was on 2026-11-05.
+- `.env` stays in `.gitignore` as a safety net.

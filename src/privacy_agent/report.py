@@ -1,18 +1,10 @@
 """Readable report from tool results. Plain Python: no LLM, no network, easy to test.
 
-Two renderers, deliberately:
-  build_report()     -> markdown, for Gradio and saved files
-  render_terminal()  -> plain text, for the CLI (no HTML, wrapped, aligned columns)
-
-The terminal one exists because a markdown table and a `<details>` tag are both unreadable
-when printed as literal text.
+build_report() -> markdown, for Gradio and saved files.
 """
 from __future__ import annotations
 
-import textwrap
-from datetime import datetime, timezone
-
-from .schema import md_escape, strip_ctrl
+from .schema import md_escape
 
 # Friendly service names. Anything missing falls back to a prettified domain.
 DISPLAY = {
@@ -242,97 +234,4 @@ def build_report(footprint, breaches, playbooks, lookup_services, *,
         L += ["", "## Do this first", "", render_checklist(checklist)]
     if drafts:
         L += ["", "## Erasure drafts (nothing is sent automatically)", "", render_drafts(drafts)]
-    return "\n".join(L)
-
-
-# --------------------------------------------------------------------------- terminal
-
-def _wrap(text: str, width: int, indent: str = "  ") -> list:
-    """Wrap to width and indent every line (textwrap.wrap does not indent for you)."""
-    lines = textwrap.wrap(text, width=max(24, width - len(indent))) or [""]
-    return [indent + l for l in lines]
-
-
-def _cols(rows, gap: int = 2) -> list:
-    """Two aligned columns: (left, right). Never truncates the left column."""
-    if not rows:
-        return []
-    w = max(len(l) for l, _ in rows)
-    return [f"  {l.ljust(w)}{' ' * gap}{r}".rstrip() for l, r in rows]
-
-
-def _rule(label: str, width: int) -> str:
-    return f"\n  {label}\n  " + "─" * (width - 2)
-
-
-def render_terminal(footprint, breaches, playbooks, lookup_services, *,
-                    drafts=None, checklist=None, email=None, width: int = 88) -> str:
-    """Plain-text report: no HTML, wrapped, aligned. For the CLI."""
-    W = max(60, width)
-    L = ["", "  PRIVACY FOOTPRINT REPORT"]
-    if email:
-        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-        L.append(f"  {email}   ·   {stamp}")
-
-    fd = footprint.get("data", {})
-    L.append(_rule("ACCOUNTS", W))
-    if footprint.get("status") != "ok":
-        L += _wrap("The account check could not run: " + str(footprint.get("error")), W)
-    else:
-        acc = fd.get("confirmed_accounts", [])
-        lim = fd.get("rate_limited_or_unchecked", [])
-        c = fd.get("holehe_counts", {})
-        err = fd.get("errored", [])
-        total = c.get("registered", 0) + c.get("not_registered", 0) + c.get("rate_limited", 0) + len(err)
-        if total:
-            L += _wrap(f"{total - len(lim) - len(err)} of {total} sites probed · "
-                       f"{len(lim)} blocked by rate limits and NOT checked"
-                       + (f" · {len(err)} errored and NOT checked" if err else ""), W)
-        if acc:
-            rows = []
-            for d in acc:
-                m = (playbooks.get(d, {}).get("data", {}).get("matches") or [None])[0]
-                rows.append((display_name(d), effort_label(m)))
-            L += _cols(rows)
-        else:
-            L += ["  none confirmed"]
-
-    L.append(_rule("BREACHES", W))
-    if breaches.get("status") != "ok":
-        L += _wrap("The breach check could not run: " + str(breaches.get("error")), W)
-    else:
-        names = breaches.get("data", {}).get("breaches", [])
-        L += _wrap(f"{len(names)} known: " + ", ".join(strip_ctrl(n) for n in names) if names
-                   else "none known (not proof of safety)", W)
-
-    if lookup_services:
-        L.append(_rule("OPT OUT OF THE SITES THAT PROFILE YOU", W))
-        rows = []
-        for m in lookup_services:
-            label = display_name(m.get("domain") or m.get("name", ""))
-            if not m.get("verified"):
-                label += " (unverified)"
-            rows.append((label, effort_label(m)))
-        L += _cols(rows)
-        L += _wrap("Opting out of one does not opt you out of the others, and it removes you "
-                   "from that site's answer, not the breach data underneath.", W)
-
-    if checklist:
-        L.append(_rule("DO THIS FIRST", W))
-        for track, title in (("A", "Stop being findable"), ("B", "Shrink the footprint")):
-            rows = [i for i in checklist if i["track"] == track]
-            if not rows:
-                continue
-            L += ["", f"  {title}"]
-            L += _cols([(f"{n}. {i['service']}", i["auto"]) for n, i in enumerate(rows, 1)])
-            for n, i in enumerate(rows, 1):
-                dest = i.get("url") or (f"email {i['mailto']}" if i.get("mailto")
-                                        else "no route on file: send an erasure request")
-                L += _wrap(dest.replace("https://", ""), W, " " * (4 + len(str(n))))
-
-    if drafts:
-        L.append(_rule("ERASURE DRAFTS (nothing is sent automatically)", W))
-        for d in drafts:
-            L += ["", f"  {d.get('platform')} — {d.get('subject')}"]
-        L += _wrap("Full text is in the saved report.", W)
     return "\n".join(L)

@@ -1,7 +1,7 @@
 """Deterministic audit pipeline. No LLM, no API key.
 
-Used by `cli.py` (default mode) and the Gradio "Audit (no LLM key needed)" button, so the
-tool is fully useful without a Groq/Gemini key. The agent is an enhancement, not a dependency.
+Used by the Gradio "Scan (no LLM key needed)" button, so the
+tool is fully useful without a Groq key. The agent is an enhancement, not a dependency.
 """
 from __future__ import annotations
 

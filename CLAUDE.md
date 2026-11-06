@@ -3,12 +3,12 @@
 ## Goal
 Course project (ITC 754): a small agentic AI system in Google Colab with a Gradio interface. The model chooses among at least three distinct, real tools (at least two kinds of work, at least two supporting the core value); Python executes them and returns observations so the model can decide again. One complete user journey with data we can provide. The course brief (GUIDELINE.md) wins over any other doc.
 
-Project: show what is findable about your own email or username (accounts, breaches), then plan removal (playbooks plus GDPR/CCPA drafts). Also a local tool and portfolio piece.
+Project: show what is findable about your own email or username (accounts, breaches), then plan removal (playbooks plus GDPR/CCPA drafts). Colab-only (run from the notebook with your own Groq key in Colab Secrets); also a portfolio piece.
 
 ## Layout
 - `src/privacy_agent/tools/` tools, each returns `schema.result(...)`: `userscan.py` (email_scan, username_scan), `breaches.py`, `playbooks.py`, `erasure.py`, `footprint.py` (holehe fallback)
 - `src/privacy_agent/agent.py` loop (generator of events); `llm.py` backends; `schema.py` shared helpers
-- `app.py` Gradio; `cli.py` local runner (`--tools-only` skips the LLM)
+- `app.py` Gradio, Colab only (`launch(groq_key)` from the notebook; key from Colab Secrets, never saved); `notebooks/colab_quickstart.ipynb` is the only way to run it
 - `tests/` run with `python -m pytest` (no network, no API key); `tests/fixtures/` holds SYNTHETIC sample data only
 
 ## Rules (do not break)
@@ -24,7 +24,6 @@ Project: show what is findable about your own email or username (accounts, breac
 
 ## Untested / to verify first
 - `llm.GroqBackend`: run one live agent loop and confirm the forced final answer on the last step works.
-- `llm.GeminiBackend` was written against the docs but NOT run against the live API.
 - `username_scan` is tested offline only. Run it live from a normal (non-cloud) connection.
 - Maigret is not integrated. Decide after a live test whether it adds real accounts beyond user-scanner.
 - `breaches.py` response shape confirmed once live; free API is about 1 req/s.

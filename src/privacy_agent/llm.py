@@ -1,7 +1,5 @@
-"""LLM backends (Groq, Gemini). The agent only needs three methods: start / generate / add_tool_results.
+"""LLM backend (Groq). The agent only needs three methods: start / generate / add_tool_results.
 
-GeminiBackend drives Gemini function calling manually (automatic calling is disabled) so the
-agent loop, not the SDK, decides what runs and every step can be shown in the UI.
 ScriptedBackend replays canned turns for tests, so tests need no API key or quota.
 """
 from __future__ import annotations
@@ -31,71 +29,6 @@ class ModelTurn:
     calls: list = field(default_factory=list)
 
 
-class GeminiBackend:
-    def __init__(self, api_key: str | None = None, model: str | None = None, declarations=None):
-        key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-        if not key:
-            raise LLMError("No Gemini API key. Set GEMINI_API_KEY (or paste it in the app).")
-        from google import genai
-        from google.genai import types
-        self.types = types
-        self.client = genai.Client(api_key=key)
-        # Default is an alias; override with GEMINI_MODEL if your free tier lacks quota for it.
-        self.model = model or os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
-        self.declarations = declarations or DECLARATIONS
-        self.contents, self.config = [], None
-
-    def start(self, system: str, user: str) -> None:
-        t = self.types
-        tool = t.Tool(function_declarations=[t.FunctionDeclaration(**d) for d in self.declarations])
-        self.config = t.GenerateContentConfig(
-            system_instruction=system, tools=[tool],
-            automatic_function_calling=t.AutomaticFunctionCallingConfig(disable=True))
-        self.contents = [t.Content(role="user", parts=[t.Part(text=user)])]
-
-    def _call(self):
-        from google.genai import errors
-        for attempt in range(3):
-            try:
-                return self.client.models.generate_content(
-                    model=self.model, contents=self.contents, config=self.config)
-            except errors.APIError as e:
-                code = getattr(e, "code", None)
-                if code == 429 and attempt < 2:
-                    time.sleep(20 * (attempt + 1))
-                    continue
-                if code == 429:
-                    raise LLMError("Gemini rate/quota limit (429). Free tiers have small daily limits; "
-                                   "wait, or set GEMINI_MODEL to another model.") from e
-                raise LLMError(f"Gemini API error {code}: {e}") from e
-
-    def add_user_note(self, text: str) -> None:
-        self.contents.append(self.types.Content(role="user", parts=[self.types.Part.from_text(text=text)]))
-
-    def generate(self, allow_tools: bool = True) -> ModelTurn:
-        # allow_tools=False is enforced by the prompt only; the agent loop checks the result.
-        resp = self._call()
-        if not resp.candidates or not resp.candidates[0].content:
-            raise LLMError("Gemini returned no content (possibly blocked or empty).")
-        content = resp.candidates[0].content
-        # Append the model's content object unchanged: Gemini 3 needs its thought signatures
-        # echoed back across tool-calling turns.
-        self.contents.append(content)
-        text, calls = "", []
-        for part in content.parts or []:
-            fc = getattr(part, "function_call", None)
-            if fc:
-                calls.append(ToolCall(fc.name, dict(fc.args or {})))
-            elif getattr(part, "text", None) and not getattr(part, "thought", False):
-                text += part.text
-        return ModelTurn(text.strip(), calls)
-
-    def add_tool_results(self, results) -> None:
-        t = self.types
-        parts = [t.Part.from_function_response(name=c.name, response={"result": r}) for c, r in results]
-        self.contents.append(t.Content(role="user", parts=parts))
-
-
 def _openai_tools(declarations):
     """Convert our declarations to OpenAI-style tool specs (used by Groq)."""
     return [{"type": "function",
@@ -113,7 +46,7 @@ class GroqBackend:
         if client is None:
             key = api_key or os.environ.get("GROQ_API_KEY")
             if not key:
-                raise LLMError("No Groq API key. Set GROQ_API_KEY (or paste it in the app).")
+                raise LLMError("No Groq API key. Add GROQ_API_KEY to Colab Secrets.")
             from groq import Groq
             client = Groq(api_key=key)
         self.client = client
@@ -187,27 +120,12 @@ class GroqBackend:
             self.messages.append({"role": "tool", "tool_call_id": call.id, "content": body})
 
 
-def make_backend(provider: str | None = None, api_key: str | None = None, model: str | None = None):
-    """provider: 'groq' | 'gemini'.
-
-    Resolution order: explicit argument, then LLM_PROVIDER, then whichever key is actually set.
-    Groq wins when both are set (its free tier allows more requests per minute; Gemini's has
-    small daily limits). If neither key is set we say so, instead of silently picking one.
-    """
-    provider = (provider or os.environ.get("LLM_PROVIDER") or "").lower()
-    if not provider:
-        if os.environ.get("GROQ_API_KEY"):
-            provider = "groq"
-        elif os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
-            provider = "gemini"
-        else:
-            raise LLMError("No API key found. Put GROQ_API_KEY (or GEMINI_API_KEY) in .env, "
-                           "or set one in the environment. `--provider` does not supply a key.")
+def make_backend(provider: str | None = "groq", api_key: str | None = None, model: str | None = None):
+    """provider: 'groq' (the only backend). The key comes from Colab Secrets via app.launch()."""
+    provider = (provider or "groq").lower()
     if provider == "groq":
         return GroqBackend(api_key=api_key, model=model)
-    if provider == "gemini":
-        return GeminiBackend(api_key=api_key, model=model)
-    raise LLMError(f"Unknown provider {provider!r}; use 'groq' or 'gemini'.")
+    raise LLMError(f"Unknown provider {provider!r}; use 'groq'.")
 
 
 class ScriptedBackend:
