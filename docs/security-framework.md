@@ -21,7 +21,7 @@ This tool is riskier than most in one way: **it pulls text from third-party webs
 | System prompt leak | "Show me your instructions" | No secrets in the prompt. A test tries to extract it |
 | Unbounded consumption | Runaway loops, burned API calls, hammering lookup sites | Step and call limits, timeouts, polite rate limits on lookups |
 | Secret leak | The Groq key in the repo, a file, logs, notebook output or a child process | The key is read only from Colab Secrets and passed to the app as an argument. It is never written to a file, printed, or put in `os.environ` (so lookup subprocesses never inherit it). No `.env` or key file exists. The page shows it masked. Secret scanner on every commit |
-| Excessive exposure | A public Gradio link lets anyone run scans from the session and spend the key | Colab only. `launch()` refuses to run outside Colab and always passes `share=False` (Gradio would otherwise share by default in Colab). No share link, login, local launcher or CLI |
+| Excessive exposure | A public Gradio link lets anyone run scans from the session and spend the key | Colab only. `launch()` refuses to run outside Colab and always passes `share=False` (Gradio would otherwise share by default in Colab). The page is shown with Colab's own `serve_kernel_port_as_iframe`, whose proxy URL only the signed-in notebook user can open. The server binds `0.0.0.0` on the Colab VM so that proxy can reach it; the VM takes no direct inbound traffic from the internet. No share link, login, local launcher or CLI |
 | Supply chain | OSINT libraries pull in many dependencies, some with known holes | Pinned dependencies. Dependency audit on every change |
 
 ## 2. Security built into the design

@@ -106,9 +106,39 @@ def in_colab() -> bool:
     return "google.colab" in sys.modules
 
 
-def launch(groq_key: str | None = None, debug: bool = True):
-    """Start the page inside the Colab notebook. Never a public share link."""
+def _colab_output():
+    """Colab's output module. A function so tests can replace it."""
+    from google.colab import output
+    return output
+
+
+_running = None  # the page from the previous launch() in this session, if any
+
+
+def launch(groq_key: str | None = None, height: int = 900):
+    """Start the page and show it inside the Colab notebook. Never a public share link.
+
+    Uses Colab's documented method for a server running in the notebook,
+    google.colab.output.serve_kernel_port_as_iframe, instead of Gradio's built-in Colab
+    display. The iframe goes through Colab's port proxy, which only the signed-in notebook
+    user can open.
+    """
+    global _running
     if not in_colab():
         raise RuntimeError("This tool runs only in Google Colab. Open notebooks/colab_quickstart.ipynb there.")
-    # share=False explicitly: in Colab, Gradio would otherwise create a public link by default.
-    return build_demo(groq_key).launch(share=False, debug=debug, theme=THEME)
+    if _running is not None:  # re-running the cell: stop the old server (and its copy of the key)
+        _running.close()
+        _running = None
+    demo = build_demo(groq_key)
+    demo.launch(
+        share=False,               # explicit: in Colab, Gradio would otherwise make a public link
+        server_name="0.0.0.0",     # reachable by Colab's port proxy, not loopback-only (127.0.0.1)
+        inline=False,              # no Gradio iframe; Colab's own iframe below replaces it
+        prevent_thread_lock=True,  # return, so the cell finishes and the iframe can load
+        ssr_mode=False,            # plain Python server, no Node proxy port
+        show_error=True,           # errors appear in the page, since the cell no longer blocks
+        theme=THEME,
+    )
+    _running = demo
+    _colab_output().serve_kernel_port_as_iframe(demo.server_port, height=str(height))
+    return demo

@@ -43,7 +43,7 @@ Every tool returns one shape (`status: ok | unavailable | error`). `unavailable`
 ## Run it (Google Colab only)
 1. Open [`notebooks/colab_quickstart.ipynb`](notebooks/colab_quickstart.ipynb) in Google Colab.
 2. Get a free Groq key at console.groq.com/keys. In Colab, open **Secrets** (key icon, left sidebar), add a secret named `GROQ_API_KEY` with your key, and turn on notebook access.
-3. Run the cells in order. The page opens inside the notebook.
+3. Run the cells in order. The page opens inside the notebook. Re-running the launch cell restarts it.
 
 The scan works without a key; only the agentic audit needs it. Your key is read from Colab Secrets when the app starts and kept in memory only: it is never written to a file, printed, or put in an environment variable. Never paste it into a cell, chat or screenshot.
 

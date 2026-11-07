@@ -231,13 +231,26 @@ def test_launch_in_colab_never_shares_and_keeps_key_out_of_env(monkeypatch):
     import gradio as gr
     import app
     key = "TEST-ONLY-placeholder-1234"
-    seen = {}
+    seen, frames, closed = {}, [], []
+
+    def fake_launch(self, **kw):
+        seen.update(kw)
+        self.server_port = 7860
+
     monkeypatch.setitem(sys.modules, "google.colab", types.ModuleType("google.colab"))
-    monkeypatch.setattr(gr.Blocks, "launch", lambda self, **kw: seen.update(kw))
+    monkeypatch.setattr(gr.Blocks, "launch", fake_launch)
+    monkeypatch.setattr(gr.Blocks, "close", lambda self: closed.append(self))
+    monkeypatch.setattr(app, "_colab_output", lambda: types.SimpleNamespace(
+        serve_kernel_port_as_iframe=lambda port, **kw: frames.append((port, kw))))
+    monkeypatch.setattr(app, "_running", None)
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
-    app.launch(key)
+    first = app.launch(key)
     assert seen["share"] is False and "auth" not in seen
+    assert seen["server_name"] == "0.0.0.0" and seen["inline"] is False and seen["prevent_thread_lock"] is True
+    assert frames == [(7860, {"height": "900"})]  # shown with Colab's own iframe, on the server's port
     assert key not in os.environ.values()  # subprocesses never inherit the key
+    app.launch(key)  # re-running the cell stops the previous server first
+    assert closed == [first]
 
 
 def test_no_key_files_or_local_launch_paths_remain():
