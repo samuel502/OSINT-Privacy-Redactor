@@ -31,6 +31,6 @@ Project: show what is findable about your own email or username (accounts, breac
 
 ## Next steps
 1. Merge layer: one de-duplicated report across tools with confirmed / possible / unverified labels.
-2. Load the researched opt-out registry (about 40 routes for the demo) and add `start_optout` (dry-run by default).
+2. Load the researched opt-out registry (about 40 routes for the demo). Automated opt-out is out of scope.
 3. Real two-tool agent trace saved as JSON; Gradio modes (Email / Username / Both).
 4. Single Colab notebook with the 7 required headings, sample-data mode, then writeup, checkpoints and demo.

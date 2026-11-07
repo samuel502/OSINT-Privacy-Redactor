@@ -63,7 +63,9 @@ def _failed(res: dict, label: str, failed: list, notes: list) -> bool:
     if res is None:
         return True
     if res.get("status") != "ok":
-        failed.append(label)
+        timed_out = (res.get("data") or {}).get("timed_out")
+        if (label + " (timed out)" if timed_out else label) not in failed:
+            failed.append(label + " (timed out)" if timed_out else label)
         why = res.get("error") or "no usable answer"
         notes.append(f"{label}: could not check ({why}). This is NOT a 'nothing found'.")
         return True

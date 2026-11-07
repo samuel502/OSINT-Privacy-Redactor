@@ -64,15 +64,17 @@ def dispatch(name: str, args: dict, ctx: dict) -> dict:
     """Run one tool. Never raises: failures come back as an error result."""
     args = args or {}
     try:
+        # Optional limits from the plain scan (time left, live counter, cancel flag); the agent passes none.
+        limits = {k: ctx[k] for k in ("timeout", "progress", "cancel") if k in ctx}
         if name == "email_scan":
-            r = email_scan(ctx["email"])
+            r = email_scan(ctx["email"], **limits)
             if r["status"] == "unavailable":  # user-scanner missing: fall back to holehe + Gravatar
                 fb = footprint_probe(ctx["email"])
                 fb["note"] = "Fallback: user-scanner unavailable, used holehe + Gravatar. " + (fb.get("note") or "")
                 return fb
             return r
         if name == "username_scan":
-            return username_scan(str(args.get("username", "")))
+            return username_scan(str(args.get("username", "")), **limits)
         if name == "footprint_probe":  # kept for the no-LLM pipeline; not declared to the model
             return footprint_probe(ctx["email"])
         if name == "public_profiles":  # used by the no-LLM scan; not declared to the model

@@ -115,7 +115,7 @@ def _colab_output():
 _running = None  # the page from the previous launch() in this session, if any
 
 
-def launch(groq_key: str | None = None, height: int = 900):
+def launch(groq_key: str | None = None, height: int = 900) -> None:
     """Start the page and show it inside the Colab notebook. Never a public share link.
 
     Uses Colab's documented method for a server running in the notebook,
@@ -141,4 +141,4 @@ def launch(groq_key: str | None = None, height: int = 900):
     )
     _running = demo
     _colab_output().serve_kernel_port_as_iframe(demo.server_port, height=str(height))
-    return demo
+    # Returns nothing: Colab would print a returned Blocks object as a long dump under the page.

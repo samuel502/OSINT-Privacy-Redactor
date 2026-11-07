@@ -14,20 +14,28 @@ Honesty rules carried into the output:
   * "Error" and "Skipped" are counted and reported, never turned into "not found".
   * Sites that may email the target a password-reset notice are skipped unless include_loud=True.
   * A username hit is only a "possible_match": the same handle can belong to someone else.
+  * A scan that hits its time limit is "timed out", with the sites answered so far counted.
+
+Process control: stdin is closed (user-scanner otherwise waits forever on an "update? (y/n)"
+prompt when PyPI has a newer version), and the scanner runs in its own process group so a
+timeout or cancel kills it and every process it started.
 """
 from __future__ import annotations
 
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 
 from ..schema import result, validate_email
 
 SOURCE = "user-scanner"
-TIMEOUT_S = int(os.environ.get("USER_SCANNER_TIMEOUT", "280"))
+TIMEOUT_S = int(os.environ.get("USER_SCANNER_TIMEOUT", "120"))
 USERNAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._\-]{0,63}$")
 
 HIT = {"registered", "found", "taken"}
@@ -99,26 +107,114 @@ def parse_rows(rows: list[dict], kind: str) -> dict:
     return {"hits": hits[:MAX_HITS], "hit_count": len(hits), **counts, **not_checked}
 
 
-def _why(proc, value: str) -> str:
-    """Last line of the scanner's own error output, with the scanned value removed, capped."""
-    lines = [ln.strip() for ln in (getattr(proc, "stderr", "") or "").splitlines() if ln.strip()]
+def _why(returncode, tail: list, value: str) -> str:
+    """Last line of the scanner's own output, with the scanned value removed, capped."""
+    lines = [ln.strip() for ln in tail if ln.strip()]
     if not lines:
-        return f" (exit code {getattr(proc, 'returncode', '?')}, no error text)"
+        return f" (exit code {returncode}, no error text)"
     return " (" + lines[-1].replace(value, "<value>")[:200] + ")"
 
 
-def _run(flag: str, value: str, include_loud: bool) -> list[dict]:
+# One console line per site with --all, indented: "  [✔] Site (user): Registered".
+# user-scanner's own banner and update messages start at column 0, so they are not counted.
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+_LINE = re.compile(r"^\s+\[(✔|✘|!|~)\]\s")
+_KIND = {"✔": "found", "✘": "absent", "!": "errors", "~": "skipped"}
+
+
+def new_progress() -> dict:
+    return {"found": 0, "absent": 0, "errors": 0, "skipped": 0}
+
+
+def count_line(line: str, progress: dict) -> None:
+    m = _LINE.match(_ANSI.sub("", line))
+    if m:
+        progress[_KIND[m.group(1)]] += 1
+
+
+class ScanTimeout(Exception):
+    """The scan hit its time limit. Carries the per-site counts seen before it was stopped."""
+
+    def __init__(self, seconds: int, progress: dict, cancelled: bool = False):
+        super().__init__(f"timed out after {seconds}s")
+        self.seconds, self.progress, self.cancelled = seconds, dict(progress), cancelled
+
+
+def kill_tree(proc) -> None:
+    """Kill the scanner and every process it started (its whole process group)."""
+    if proc.poll() is not None:
+        return
+    try:
+        if os.name == "posix":
+            os.killpg(proc.pid, signal.SIGKILL)  # start_new_session=True made pid the group id
+        else:
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],  # /T: child processes too
+                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           check=False, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        proc.kill()
+    except OSError:
+        pass
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def run_capped(cmd: list, timeout: float, env: dict | None = None, progress: dict | None = None,
+               cancel: threading.Event | None = None) -> tuple[int, list]:
+    """Run cmd with stdin closed, counting per-site lines into `progress` as they arrive.
+
+    Returns (returncode, last output lines). On timeout or cancel the whole process group is
+    killed and ScanTimeout is raised, so nothing keeps running in the background.
+    """
+    progress = new_progress() if progress is None else progress
+    tail: list = []
+    group = ({"start_new_session": True} if os.name == "posix"
+             else {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP})
+    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, encoding="utf-8", errors="replace", env=env, **group)
+
+    def read():
+        for line in proc.stdout:
+            count_line(line, progress)
+            tail.append(line)
+            del tail[:-20]
+
+    reader = threading.Thread(target=read, daemon=True)
+    reader.start()
+    start = time.monotonic()
+    try:
+        while proc.poll() is None:
+            if cancel is not None and cancel.is_set():
+                kill_tree(proc)
+                raise ScanTimeout(int(time.monotonic() - start), progress, cancelled=True)
+            if time.monotonic() - start >= timeout:
+                kill_tree(proc)
+                raise ScanTimeout(int(timeout), progress)
+            time.sleep(0.25)
+    finally:
+        kill_tree(proc)  # no-op when it already exited; kills it on any other exception
+        reader.join(timeout=5)
+    return proc.returncode, tail
+
+
+def _run(flag: str, value: str, include_loud: bool, timeout: float | None = None,
+         progress: dict | None = None, cancel: threading.Event | None = None) -> list[dict]:
     with tempfile.TemporaryDirectory() as tmp:
         out = os.path.join(tmp, "out.json")
-        cmd = [sys.executable, "-m", "user_scanner", flag, value, "-f", "json", "-o", out]
+        cmd = [sys.executable, "-m", "user_scanner", flag, value, "--all", "-f", "json", "-o", out]
         if include_loud:
             cmd.append("--allow-loud")
         # Windows consoles default to cp1252 and crash on the emoji user-scanner prints when piped.
-        env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
-        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                              timeout=TIMEOUT_S, check=False, env=env)
+        # Unbuffered, so each site's line arrives as it finishes (live progress).
+        env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
+        code, tail = run_capped(cmd, TIMEOUT_S if timeout is None else min(timeout, TIMEOUT_S),
+                                env=env, progress=progress, cancel=cancel)
         if not os.path.exists(out):
-            raise RuntimeError("user-scanner produced no JSON output" + _why(proc, value))
+            raise RuntimeError("user-scanner produced no JSON output" + _why(code, tail, value))
         with open(out, encoding="utf-8") as fh:
             rows = json.load(fh)
     if not isinstance(rows, list):
@@ -131,14 +227,28 @@ def _installed() -> bool:
     return importlib.util.find_spec("user_scanner") is not None
 
 
-def _scan(flag: str, value: str, kind: str, include_loud: bool) -> dict:
+def timeout_result(t: ScanTimeout) -> dict:
+    """A timed-out scan: counted, never 'nothing found'. Hits seen before the stop are not listed,
+    because the scan did not finish and its JSON was never written."""
+    p = t.progress
+    answered = p["found"] + p["absent"]
+    head = "Stopped (scan cancelled)" if t.cancelled else f"Timed out after {t.seconds}s"
+    data = {"timed_out": True, "seconds": t.seconds, "checked": answered, "found": p["found"],
+            "errors": p["errors"], "skipped": p["skipped"]}
+    return result("error", data, SOURCE,
+                  error=f"{head}: {answered} sites answered ({p['found']} found), {p['skipped']} skipped, "
+                        f"{p['errors']} errored; every other site was NOT checked.")
+
+
+def _scan(flag: str, value: str, kind: str, include_loud: bool, timeout: float | None = None,
+          progress: dict | None = None, cancel: threading.Event | None = None) -> dict:
     try:
         if not _installed():
             return result("unavailable", source=SOURCE,
                           error="user-scanner is not installed (pip install user-scanner).")
-        rows = _run(flag, value, include_loud)
-    except subprocess.TimeoutExpired:
-        return result("error", source=SOURCE, error=f"Timed out after {TIMEOUT_S}s.")
+        rows = _run(flag, value, include_loud, timeout=timeout, progress=progress, cancel=cancel)
+    except ScanTimeout as t:
+        return timeout_result(t)
     except Exception as e:  # noqa: BLE001
         return result("error", source=SOURCE, error=f"{type(e).__name__}: {e}")
     data = parse_rows(rows, kind)
@@ -158,9 +268,11 @@ def _scan(flag: str, value: str, kind: str, include_loud: bool) -> dict:
     return result("ok", data, SOURCE, note=" ".join(notes))
 
 
-def email_scan(email: str, include_loud: bool = False) -> dict:
-    return _scan("-e", validate_email(email), "email", include_loud)
+def email_scan(email: str, include_loud: bool = False, timeout: float | None = None,
+               progress: dict | None = None, cancel: threading.Event | None = None) -> dict:
+    return _scan("-e", validate_email(email), "email", include_loud, timeout, progress, cancel)
 
 
-def username_scan(username: str) -> dict:
-    return _scan("-u", validate_username(username), "username", False)
+def username_scan(username: str, timeout: float | None = None, progress: dict | None = None,
+                  cancel: threading.Event | None = None) -> dict:
+    return _scan("-u", validate_username(username), "username", False, timeout, progress, cancel)

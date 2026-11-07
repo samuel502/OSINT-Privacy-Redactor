@@ -57,6 +57,7 @@ Edit `src/privacy_agent/data/playbooks.json`. For each service, visit its opt-ou
 
 ## Limitations
 - Lookups depend on third-party sites. Some block cloud IPs or rate-limit; results are a floor, not a complete list.
+- Scans in Colab are slower and find less than on a home connection, because many sites throttle or block cloud IP addresses (Colab runs on Google Cloud). The whole scan stops after 3 minutes; anything unfinished is reported as timed out, with the sites checked and skipped so far, never as "nothing found".
 - Absence on a site is not proof the email is unused there.
 - Username matches are leads, not proof.
 - Free API tiers are rate-limited.

@@ -7,6 +7,10 @@ Modes: "email" | "username" | "both".
 Labels shown to the user: confirmed (the site itself reported the email), possible match
 (a username hit, may belong to someone else). Anything that did not run is listed under
 "Could not check", never shown as "nothing found".
+
+The whole scan has a hard time limit (SCAN_LIMIT_S), pivot username scans included. Each
+user-scanner run gets only the time that is left; on timeout it is killed with every process
+it started, and the result says "timed out" with the sites checked and skipped so far.
 """
 from __future__ import annotations
 
@@ -15,13 +19,15 @@ import json
 import os
 import shutil
 import tempfile
+import threading
+import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from .merge import merge_findings, routes_by_domain
-from .schema import md_escape, md_fence, md_safe, validate_email
+from .schema import md_escape, md_fence, md_safe, result, validate_email
 from .tools import dispatch
-from .tools.userscan import validate_username
+from .tools.userscan import TIMEOUT_S, new_progress, validate_username
 
 MODES = ("email", "username", "both")
 PLAYBOOKS = Path(__file__).resolve().parent / "data" / "playbooks.json"
@@ -50,6 +56,10 @@ def load_routes() -> dict:
 
 
 MAX_PIVOT = 3
+SCAN_LIMIT_S = 180      # hard limit for the whole scan, pivot username scans included
+MIN_PIVOT_S = 30        # a pivot username scan starts only if at least this much time is left
+PROGRESS_EVERY_S = 3    # how often the page gets a live progress line
+GRACE_S = 15            # extra wait for a lookup to stop after its own time limit
 
 
 def looks_generated(u: str) -> bool:
@@ -85,35 +95,120 @@ def pivot_usernames(email_res: dict | None, already: list | None = None, limit: 
     return out[:limit]
 
 
-def run_scan(mode: str, email: str, username: str, dispatch_fn=dispatch, routes=None, pivot: bool = False):
-    """Generator: {"type": "step", "text"} events, then one {"type": "bundle", "bundle"}."""
+def status_text(r: dict) -> str:
+    """One line for the trace. A timeout says so, with counts; never reads as 'nothing found'."""
+    d = r.get("data") or {}
+    if d.get("timed_out"):
+        return (f"timed out after {d['seconds']}s ({d['checked']} sites checked, {d['skipped']} skipped, "
+                f"{d['errors']} errored; the rest NOT checked)")
+    if r.get("status") == "ok" and "checked" in d:
+        return (f"done ({d['checked']} sites checked, {d.get('hit_count', 0)} found, "
+                f"{d.get('skipped', 0)} skipped, {d.get('errors', 0)} errored)")
+    return r.get("status", "error")
+
+
+def limit_text(seconds: int) -> str:
+    return f"{seconds // 60} minutes" if seconds >= 120 else f"{seconds} seconds"
+
+
+def not_run(what: str, limit_s: int) -> dict:
+    return result("error", source="scan",
+                  error=f"Not run: the scan time limit ({limit_text(limit_s)}) was reached before {what} could start.")
+
+
+def _timed(dispatch_fn, name: str, args: dict, ctx: dict, label: str, budget_s: float):
+    """Generator: run one user-scanner lookup in a worker thread, yield live progress, return its result.
+
+    The lookup gets `budget_s` seconds; it kills its own processes when that runs out. If this
+    generator is closed early (page closed, run cancelled), the cancel flag stops the scanner too.
+    """
+    progress, cancel, box = new_progress(), threading.Event(), {}
+    sub = {**ctx, "timeout": budget_s, "progress": progress, "cancel": cancel}
+
+    def work():
+        try:
+            box["r"] = dispatch_fn(name, args, sub)
+        except Exception as e:  # noqa: BLE001
+            box["r"] = result("error", source=name, error=f"{type(e).__name__}: {e}")
+
+    worker = threading.Thread(target=work, daemon=True)
+    start = time.monotonic()
+    worker.start()
+    try:
+        while worker.is_alive():
+            worker.join(PROGRESS_EVERY_S)
+            elapsed = time.monotonic() - start
+            if worker.is_alive() and elapsed > budget_s + GRACE_S:
+                cancel.set()
+                return result("error", {"timed_out": True, "seconds": int(budget_s), "checked": progress["found"] + progress["absent"],
+                                        "found": progress["found"], "errors": progress["errors"], "skipped": progress["skipped"]},
+                              name, error=f"Timed out after {int(budget_s)}s and was stopped; the rest NOT checked.")
+            if worker.is_alive():
+                seen = sum(progress.values())
+                what = (f"{progress['found'] + progress['absent']} sites answered so far ({progress['found']} found, "
+                        f"{progress['skipped']} skipped, {progress['errors']} errored)" if seen
+                        else "starting up (loading the site checks takes about 15 seconds)")
+                yield {"type": "progress", "text": f"{label}: {what}, {int(elapsed)}s of at most {int(budget_s)}s"}
+    finally:
+        if worker.is_alive():
+            cancel.set()
+    return box["r"]
+
+
+def run_scan(mode: str, email: str, username: str, dispatch_fn=dispatch, routes=None, pivot: bool = False,
+             limit_s: int = SCAN_LIMIT_S, clock=time.monotonic):
+    """Generator: {"type": "step"|"progress", "text"} events, then one {"type": "bundle", "bundle"}.
+
+    Hard time limit `limit_s` for everything. The quick checks (public profiles, breaches) run first;
+    each user-scanner run then gets at most min(TIMEOUT_S, time left).
+    """
     clean_email, clean_user = validate_scan_inputs(mode, email, username)
     ctx = {"email": clean_email or "", "jurisdiction": "other"}
     email_res = breach_res = profiles_res = None
     user_res = []
+    start = clock()
 
+    def left() -> float:
+        return limit_s - (clock() - start)
+
+    yield {"type": "step", "text": f"Expected time: up to {limit_text(limit_s)} (hard limit). "
+                                   "Anything not finished by then is reported as timed out, not as 'nothing found'."}
     if clean_email:
-        yield {"type": "step", "text": "Checking which services have an account for this email (about 30 seconds to a few minutes)..."}
-        email_res = dispatch_fn("email_scan", {}, ctx)
-        yield {"type": "step", "text": f"  -> email scan: {email_res['status']}"}
         yield {"type": "step", "text": "Looking for public profiles you published (Gravatar, GitHub)..."}
         profiles_res = dispatch_fn("public_profiles", {}, ctx)
         yield {"type": "step", "text": f"  -> public profiles: {profiles_res['status']}"}
         yield {"type": "step", "text": "Checking known data breaches..."}
         breach_res = dispatch_fn("breach_lookup", {}, ctx)
         yield {"type": "step", "text": f"  -> breach check: {breach_res['status']}"}
+        budget = min(TIMEOUT_S, left())
+        if budget <= 0:
+            email_res = not_run("the email scan", limit_s)
+        else:
+            yield {"type": "step", "text": f"Checking which services have an account for this email (up to {int(budget)}s)..."}
+            email_res = yield from _timed(dispatch_fn, "email_scan", {}, ctx, "Email scan", budget)
+        yield {"type": "step", "text": f"  -> email scan: {status_text(email_res)}"}
     if clean_user:
-        yield {"type": "step", "text": "Searching public profiles for the username (this can take a few minutes)..."}
-        r = dispatch_fn("username_scan", {"username": clean_user}, ctx)
+        budget = min(TIMEOUT_S, left())
+        if budget <= 0:
+            r = not_run("the username scan", limit_s)
+        else:
+            yield {"type": "step", "text": f"Searching public profiles for the username (up to {int(budget)}s)..."}
+            r = yield from _timed(dispatch_fn, "username_scan", {"username": clean_user}, ctx, "Username scan", budget)
         user_res.append(r)
-        yield {"type": "step", "text": f"  -> username scan: {r['status']}"}
+        yield {"type": "step", "text": f"  -> username scan: {status_text(r)}"}
 
     if pivot and clean_email and (email_res or profiles_res):
         for u in pivot_usernames(email_res, [clean_user] if clean_user else [], profiles_res=profiles_res):
-            yield {"type": "step", "text": f"Searching profile pages for a username the sites reported ({u}); this takes a few minutes..."}
-            r = dispatch_fn("username_scan", {"username": u}, ctx)
+            budget = min(TIMEOUT_S, left())
+            if budget < MIN_PIVOT_S:
+                r = not_run(f"the username scan for {u}", limit_s)
+                user_res.append(r)
+                yield {"type": "step", "text": f"  -> username scan for {u}: not run (time limit reached)"}
+                continue
+            yield {"type": "step", "text": f"Searching profile pages for a username the sites reported ({u}; up to {int(budget)}s)..."}
+            r = yield from _timed(dispatch_fn, "username_scan", {"username": u}, ctx, f"Username scan for {u}", budget)
             user_res.append(r)
-            yield {"type": "step", "text": f"  -> username scan for {u}: {r['status']}"}
+            yield {"type": "step", "text": f"  -> username scan for {u}: {status_text(r)}"}
 
     merged = merge_findings(email_scan=email_res, username_scans=user_res or None,
                             breach=breach_res, routes=routes if routes is not None else {}, profiles=profiles_res)
@@ -464,13 +559,18 @@ def ui_scan(mode, email, username, pivot=False, dispatch_fn=dispatch, entries=No
     """Yields 5-tuples: (trace, report, checklist, drafts, files)."""
     entries = load_entries() if entries is None else entries
     routes = load_routes() if routes is None else routes
-    trace = []
+    trace, live = [], ""
     try:
         for ev in run_scan(mode, email, username, dispatch_fn=dispatch_fn, routes=routes, pivot=pivot):
-            if ev["type"] == "step":
-                trace.append("- " + ev["text"])
-                t = "\n".join(trace)
-                yield (t, html_notice("Scan running... please wait", "This can take a few minutes. Keep this page and the terminal open."), "", "", None)
+            if ev["type"] in ("step", "progress"):
+                if ev["type"] == "step":
+                    trace.append("- " + ev["text"])
+                    live = ""
+                else:
+                    live = ev["text"]  # replaces the previous progress line instead of piling up
+                t = "\n".join(trace + ([f"- _{live}_"] if live else []))
+                body = (f"Expected time: up to {limit_text(SCAN_LIMIT_S)}. " + (live or trace[-1][2:]))
+                yield (t, html_notice("Scan running... please wait", body), "", "", None)
             else:
                 b = ev["bundle"]
                 yield ("\n".join(trace), b["report_html"], render_optout_html(entries), AGENT_HINT, write_files(b))

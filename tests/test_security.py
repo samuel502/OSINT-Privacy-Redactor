@@ -244,7 +244,8 @@ def test_launch_in_colab_never_shares_and_keeps_key_out_of_env(monkeypatch):
         serve_kernel_port_as_iframe=lambda port, **kw: frames.append((port, kw))))
     monkeypatch.setattr(app, "_running", None)
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
-    first = app.launch(key)
+    assert app.launch(key) is None  # nothing for Colab to print under the page
+    first = app._running
     assert seen["share"] is False and "auth" not in seen
     assert seen["server_name"] == "0.0.0.0" and seen["inline"] is False and seen["prevent_thread_lock"] is True
     assert frames == [(7860, {"height": "900"})]  # shown with Colab's own iframe, on the server's port

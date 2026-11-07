@@ -380,3 +380,104 @@ def test_agent_extras_names_breached_services_with_no_draft():
            "result": {"status": "ok", "data": {"platform": "8fit.com", "body": "B"}}}]
     out = agent_extras(ev, [])
     assert "No draft was made for:** Deezer" in out and "8fit," not in out
+
+
+# ---------------------------------------------------------------- 3-minute limit, progress, timeouts
+
+def _fake_clock():
+    now = [0.0]
+    return now, (lambda: now[0])
+
+
+def test_scan_budget_caps_each_scan_and_skips_pivots_when_time_runs_out():
+    from privacy_agent import scan
+    now, clock = _fake_clock()
+    budgets = []
+
+    def disp(name, args, ctx):
+        if name == "email_scan":
+            budgets.append(ctx["timeout"])
+            now[0] += 160  # the email scan used most of the 3 minutes
+            return _email_with_usernames("sample_handle")
+        if name == "username_scan":
+            raise AssertionError("no pivot may start with less than MIN_PIVOT_S left")
+        return fake_dispatch(name, args, ctx)
+    evs = list(run_scan("email", "a@example.com", "", dispatch_fn=disp, routes={}, pivot=True, clock=clock))
+    assert budgets == [min(scan.TIMEOUT_S, scan.SCAN_LIMIT_S)] == [120]
+    steps = [e["text"] for e in evs if e["type"] == "step"]
+    assert steps[0].startswith("Expected time: up to 3 minutes")
+    assert any("username scan for sample_handle: not run (time limit reached)" in s for s in steps)
+    md = evs[-1]["bundle"]["report_md"]
+    assert "Could not check" in md and "scan time limit (3 minutes) was reached" in md
+
+
+def test_pivot_gets_only_the_time_left():
+    now, clock = _fake_clock()
+    budgets = {}
+
+    def disp(name, args, ctx):
+        if name in ("email_scan", "username_scan"):
+            budgets[name] = ctx["timeout"]
+        if name == "email_scan":
+            now[0] += 100
+            return _email_with_usernames("sample_handle")
+        if name == "username_scan":
+            return result("ok", {"hits": [], "hit_count": 0, "checked": 3, "absent": 3, "errors": 0, "skipped": 0}, "user-scanner")
+        return fake_dispatch(name, args, ctx)
+    list(run_scan("email", "a@example.com", "", dispatch_fn=disp, routes={}, pivot=True, clock=clock))
+    assert budgets == {"email_scan": 120, "username_scan": 80}
+
+
+def test_timed_out_scan_shows_timed_out_with_counts_never_nothing_found():
+    from privacy_agent.scan import render_cards_html
+    from privacy_agent.tools.userscan import ScanTimeout, timeout_result
+    t = timeout_result(ScanTimeout(120, {"found": 2, "absent": 40, "errors": 3, "skipped": 5}))
+    disp = lambda name, args, ctx: t if name == "email_scan" else fake_dispatch(name, args, ctx)  # noqa: E731
+    evs = list(run_scan("email", "a@example.com", "", dispatch_fn=disp, routes={}))
+    steps = [e["text"] for e in evs if e["type"] == "step"]
+    assert any("email scan: timed out after 120s (42 sites checked, 5 skipped, 3 errored" in s for s in steps)
+    b = evs[-1]["bundle"]
+    assert "Timed out after 120s: 42 sites answered (2 found), 5 skipped" in b["report_md"]
+    assert "None found among the sites that answered" not in b["report_md"]
+    html = render_cards_html(b["merged"])
+    assert "email accounts (timed out)" in html and "No accounts found" not in html
+
+
+def test_progress_is_shown_live_as_one_updating_line(monkeypatch):
+    import time
+    from privacy_agent import scan
+    monkeypatch.setattr(scan, "PROGRESS_EVERY_S", 0.05)
+
+    def disp(name, args, ctx):
+        if name == "email_scan":
+            ctx["progress"]["absent"] = 7
+            time.sleep(0.4)
+        return fake_dispatch(name, args, ctx)
+    rows = list(scan.ui_scan("email", "a@example.com", "", dispatch_fn=disp, entries=[], routes={}))
+    live = [r for r in rows if "7 sites answered so far" in r[0]]
+    assert live and "Expected time: up to 3 minutes" in live[0][1]
+    assert all(r[0].count("sites answered so far") <= 1 for r in rows)  # replaced, not piled up
+    assert "sites answered so far" not in rows[-1][0]
+
+
+def test_closing_the_scan_early_cancels_the_running_scanner(monkeypatch):
+    import threading
+    from privacy_agent import scan
+    monkeypatch.setattr(scan, "PROGRESS_EVERY_S", 0.05)
+    got = {}
+
+    def disp(name, args, ctx):
+        if name == "email_scan":
+            got["cancelled"] = ctx["cancel"].wait(5)
+            return result("error", source="x", error="stopped")
+        return fake_dispatch(name, args, ctx)
+    gen = scan.run_scan("email", "a@example.com", "", dispatch_fn=disp, routes={})
+    for ev in gen:
+        if ev["type"] == "progress":
+            break
+    gen.close()  # page closed or run cancelled
+    for _ in range(100):
+        if "cancelled" in got:
+            break
+        threading.Event().wait(0.05)
+    assert got.get("cancelled") is True
