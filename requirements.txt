@@ -1,7 +1,6 @@
-groq>=0.11,<1.0
-gradio>=4.44
-holehe>=1.15
-user-scanner>=1.5
-httpx>=0.27
-pytest>=8.0
-playwright>=1.40
+groq==1.7.0
+gradio==6.30.0
+holehe==1.61
+user-scanner==1.5.2.3
+httpx==0.28.1
+pytest==9.1.1

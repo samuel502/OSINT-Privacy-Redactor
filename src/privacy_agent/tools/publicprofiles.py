@@ -46,7 +46,7 @@ def _txt(v, n=60) -> str:
 
 def gravatar(email: str) -> tuple[str, list]:
     """(state, profiles) with state in found | none | unknown."""
-    digest = hashlib.md5(email.strip().lower().encode("utf-8")).hexdigest()  # Gravatar's scheme
+    digest = hashlib.md5(email.strip().lower().encode("utf-8"), usedforsecurity=False).hexdigest()  # Gravatar's scheme
     code, js = _get_json(f"https://www.gravatar.com/{digest}.json")
     if code == 404:
         return "none", []

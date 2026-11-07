@@ -91,3 +91,18 @@ Added after the review above, which is kept as it was. On 6 Nov 2026 the CLI was
 - The Groq key is read only from Colab Secrets in the notebook and passed to `launch()` as an argument. It is never written to a file, printed or put in `os.environ`, so lookup subprocesses do not inherit it.
 - References above to `cli.py`, `share_settings`, `.env` and `env.py` describe the code as it was on 2026-11-05.
 - `.env` stays in `.gitignore` as a safety net.
+
+## Scan results, 2026-11-06
+
+Run on the working tree after the Colab-only change, with `requirements.txt` pinned. The tests (136) pass both in the dev environment and in a fresh venv built from the pinned file.
+
+| Check | Tool and scope | Result | Action |
+|---|---|---|---|
+| Secret scanning | gitleaks 8.30.1, `gitleaks git` (117 commits) and `gitleaks dir` (working tree, `.venv` excluded) | History: 1 hit, `generic-api-key` at `tests/test_security.py:275` in commit `7e1fad2`. It is the made-up test value `gsk_ABCDEFGHIJKLMNOP1234`, not a real key. Working tree: no leaks. | Test value replaced with `TEST-ONLY-placeholder-1234`. The old value stays in history; it was never a credential, so history is not rewritten. |
+| Code scanning | Bandit 1.9.4, `src/` and `app.py` (2,158 lines) | 0 High, 3 Medium, 4 Low. Medium: B310 `urlopen` in `breaches.py:35`, `footprint.py:98`, `publicprofiles.py:31`. All three URLs are fixed `https://` constants (XposedOrNot, Gravatar, GitHub), never taken from the model or scan data. Low: B404/B603 `subprocess` in `footprint.py` and `userscan.py`, called with an argument list, no shell, leading `-` rejected. | Accepted as reviewed. B324 (md5) is fixed: both Gravatar hashes now pass `usedforsecurity=False`, because md5 is Gravatar's lookup scheme, not a security use. |
+| Code scanning | Semgrep 1.184.0, `p/python` ruleset, `src/` and `app.py` (18 files) | 0 findings, 0 errors. | None. |
+| Dependency audit | pip-audit 2.10.1, `-r requirements.txt` (76 packages resolved) | 39 known vulnerabilities, all in one package: pillow 12.3.0 (fixed in 13.0.0). No other package has a known vulnerability. | Accepted as a known risk, below. |
+
+**Accepted risk: pillow 12.3.0.** Gradio 6.30.0 (the pinned version) requires `pillow<13.0,>=8.0`, so pillow 13 cannot be installed alongside it. The app processes no images: it has no image input or upload component, and its only image is the banner, which is HTML/CSS text. Revisit when a Gradio release allows pillow 13, then upgrade both and re-run pip-audit.
+
+**Also removed today:** `tools/fingerprint_to.py` (the optional fingerprint.to second source), its use in `footprint.py`, its two tests, and `playwright` from `requirements.txt`. The email is no longer sent to fingerprint.to under any setting; fingerprint.to remains only as an opt-out route in the playbooks.

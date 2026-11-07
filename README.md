@@ -11,7 +11,6 @@ An agentic AI tool that shows what the internet can find about **your own** emai
 | Removal playbooks (`search_playbooks`) | 8 hand-checked entries. A researched list of about 540 opt-out routes exists but is not loaded yet. |
 | Erasure drafts (`draft_erasure_request`) | Built. Drafts only. |
 | Maigret username search | Planned, pending a live test. |
-| Automated opt-out (`start_optout`) | Planned. Dry-run first; the user always confirms. |
 | Single Colab notebook | Built (quickstart). Sample-data mode planned. |
 
 ## Why an agent
@@ -32,8 +31,8 @@ Every tool returns one shape (`status: ok | unavailable | error`). `unavailable`
 
 ## Design decisions
 - **The model never sees or chooses the email.** The agent injects it into tool calls. Before tool results reach the model, the email (also URL-encoded) and the full name are replaced with placeholders, including inside erasure drafts and error messages. You still see the real drafts.
-- **Your email does go to the lookup services.** That is how a lookup works: user-scanner's sites, XposedOrNot, Gravatar and GitHub receive it. The optional fingerprint.to source (off by default) also submits it to fingerprint.to, which is itself an OSINT lookup site.
-- **Untrusted text is filtered and marked.** Profile fields, breach names and holehe/fingerprint.to hints from third-party sites are whitelisted and length-capped. Bios and free text are dropped, because they could contain instructions aimed at the model. Every tool result goes to the model inside `<untrusted-data id=…>` markers with a random per-run id, which the data cannot close. Profile details of username matches (possibly a stranger's page) are not sent to the model at all.
+- **Your email does go to the lookup services.** That is how a lookup works: user-scanner's sites, XposedOrNot, Gravatar and GitHub receive it.
+- **Untrusted text is filtered and marked.** Profile fields, breach names and holehe hints from third-party sites are whitelisted and length-capped. Bios and free text are dropped, because they could contain instructions aimed at the model. Every tool result goes to the model inside `<untrusted-data id=…>` markers with a random per-run id, which the data cannot close. Profile details of username matches (possibly a stranger's page) are not sent to the model at all.
 - **Nothing unsafe renders.** Scan values are HTML-escaped in the cards. The model's answer is shown with raw HTML and images disabled, links only over https, and terminal output has control characters removed.
 - **Colab only, no public link.** The page runs inside the notebook with `share=False`; there is no share link, login, local launcher or CLI. The Groq key comes only from Colab Secrets and is never saved.
 - **Password-reset-triggering sites are skipped by default**, because checking them can send the target a notification email.
