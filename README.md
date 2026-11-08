@@ -52,6 +52,15 @@ Some sites block cloud IP addresses, so results are a floor, not a complete list
 ### Development
 `python -m pytest` runs the tests locally (no network, no key, no Colab needed).
 
+### Troubleshooting
+- **The app area stays blank.** Chrome is blocking third-party cookies for Colab. Click the eye icon in the address bar and allow third-party cookies, or go to `chrome://settings/cookies` and add `[*.]colab.dev` and `[*.]googleusercontent.com` under "Allowed to use third-party cookies". Then reload the page and run the cells again.
+- **The launch cell finished but nothing seems to happen.** That is expected: the cell finishes on its own and the app keeps running. A scan can take up to 3 minutes; that is normal.
+- **The pivot option is slow.** It also scans the usernames found in your email results. It takes longer and often times out in Colab.
+- **You don't see the newest version.** Use Runtime > Disconnect and delete runtime, then Run all. Restart session keeps the old code.
+- **"GROQ_API_KEY not found".** The secret is missing, or notebook access is turned off for it in Secrets.
+- **The AI part fails with an access error.** A VPN can cause this. Turn it off and try again.
+- **Downloaded reports.** Report files contain your personal data. Keep them private and don't upload them anywhere.
+
 ## Add playbooks
 Edit `src/privacy_agent/data/playbooks.json`. For each service, visit its opt-out or deletion page yourself, then record `opt_out_url`, `steps_summary`, whether email confirmation is needed, `verified: true` and `last_verified`. Unverified entries stay labelled.
 
